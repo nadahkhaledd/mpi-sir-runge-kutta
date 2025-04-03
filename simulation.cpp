@@ -7,9 +7,10 @@
 #include <string>
 
 // Model parameters
-double beta = 0.5;
-double gammaRate = 0.1;
-double dt = 1;
+// More conservative model parameters
+double beta = 0.3;      // Reduced from 0.5
+double gammaRate = 0.1; 
+double dt = 0.1;        // Reduced from 1.0 for numerical stability
 int numSteps = 1000;
 
 // SIR structure (normalized values, e.g., percentages)
@@ -35,85 +36,121 @@ std::vector<std::vector<double>> loadUSStateData(const std::string& filename) {
     }
     
     std::string line;
-    // Read header and discard
-    if (!std::getline(infile, line)) {
-        std::cerr << "CSV file is empty.\n";
-        MPI_Abort(MPI_COMM_WORLD, 1);
-    }
+    bool headerFound = false;
+    int lineCount = 0;
     
-    // Each row will be stored as a vector of double for [lat, long, Confirmed, Deaths, Recovered, Active]
+    // Each row will be stored as a vector of double
     std::vector<std::vector<double>> data;
+    
+    // Process lines until we find valid data
     while (std::getline(infile, line)) {
+        lineCount++;
+        
+        // Skip empty lines
+        if (line.empty()) continue;
+        
+        // Check if this line appears to be the header
+        if (line.find("Province_State") != std::string::npos) {
+            std::cout << "Found header at line " << lineCount << ": " << line << std::endl;
+            headerFound = true;
+            continue;
+        }
+        
+        // Skip any lines before the header
+        if (!headerFound) {
+            std::cout << "Skipping pre-header line: " << line << std::endl;
+            continue;
+        }
+        
+        // Process data line
         std::istringstream ss(line);
         std::string token;
         std::vector<std::string> tokens;
+        
         // Split line on commas
         while (std::getline(ss, token, ',')) {
             tokens.push_back(trim(token));
         }
-        // Check if tokens have at least 9 columns (or as required)
-        if (tokens.size() < 9)
+        
+        // Verify we have enough columns
+        if (tokens.size() < 9) {
+            std::cerr << "Line " << lineCount << " has fewer than 9 columns: " << line << std::endl;
             continue;
+        }
         
         try {
-            double lat;
-            // For grouping by location we use Lat and Long_ (columns 3 and 4, index 3 and 4 if header is included)
-            try {
-                lat = std::stod(tokens[3]);  // Convert lat to double
-            } catch (const std::invalid_argument& e) {
-                std::cerr << "Invalid latitude value: '" << lat << "' at line " << line << std::endl;
-                continue;  // Skip this line or handle it accordingly
-            } catch (const std::out_of_range& e) {
-                std::cerr << "Latitude value out of range: '" << lat << "' at line " << line << std::endl;
-                continue;
-            }
-            //std::cout << "lat: " << lat << std::endl;
+            // Convert values to doubles
+            double lat = std::stod(tokens[3]);
             double lon = std::stod(tokens[4]);
-            std::cout << lon<< std::endl;
             double confirmed = std::stod(tokens[5]);
-            std::cout << confirmed<< std::endl;
             double deaths = std::stod(tokens[6]);
-            std::cout << deaths<< std::endl;
             double recovered = std::stod(tokens[7]);
-            std::cout << recovered<< std::endl;
             double active = std::stod(tokens[8]);
-            std::cout << active<< std::endl;
-
             
-            // We now store these values.
-            data.push_back({lon, confirmed, deaths, recovered, active});
-        } catch (const std::exception &e) {
-            std::cerr << "Parsing error: " << e.what() << "\n";
+            // Store values
+            data.push_back({lat, lon, confirmed, deaths, recovered, active});
+        } catch (const std::invalid_argument& e) {
+            std::cerr << "Invalid value at line " << lineCount << ": " << line << "\nError: " << e.what() << std::endl;
+            continue;
+        } catch (const std::out_of_range& e) {
+            std::cerr << "Value out of range at line " << lineCount << ": " << line << "\nError: " << e.what() << std::endl;
             continue;
         }
     }
+    
+    std::cout << "Successfully parsed " << data.size() << " data rows from CSV." << std::endl;
     return data;
 }
-
 // Mapping dataset columns to SIR compartments.
 // For simplicity, we assume that we normalize to 1 (i.e., percentages)
 // and that population is estimated or assumed to be 1.
 // In a real implementation, you would use actual population data.
+// Updated mapToSIR function
 SIR mapToSIR(const std::vector<double>& rowData) {
     // rowData: [lat, lon, confirmed, deaths, recovered, active]
-    // One approach: let I be the normalized 'active' fraction, R be recovered+deaths,
-    // and S = 1 - I - R.
-    double totalCases = rowData[2]; // confirmed cases
-    double removed = rowData[4] + rowData[3]; // recovered + deaths
-    double active = rowData[5];
     
-    // Here, we assume the population is large compared to the cases
-    // so that we can normalize (alternatively, use a known population for each state).
-    // For demonstration, we treat the fractions as:
-    double I = active;       // in a normalized setting
-    double R = removed;      // in a normalized setting
-    double S = 1.0 - I - R;  // ensure total is 1
+    // Calculate total population - if not available, estimate based on cases
+    double totalPopulation = std::max(1000.0, rowData[2] + 1000.0); // Confirmed cases plus buffer
+    
+    // Active cases (I)
+    double I = rowData[5] / totalPopulation; 
+    
+    // Recovered + deaths (R)
+    double R = (rowData[3] + rowData[4]) / totalPopulation;
+    
+    // Susceptible (S) - ensure it's not negative
+    double S = std::max(0.0, 1.0 - I - R);
+    
+    // Normalize to ensure S + I + R = 1
+    double sum = S + I + R;
+    if (sum > 0) {
+        S /= sum;
+        I /= sum;
+        R /= sum;
+    } else {
+        // Fallback if all zeros
+        S = 0.99;
+        I = 0.01;
+        R = 0.0;
+    }
+    
+    // Ensure values are valid and within reasonable ranges
+    S = std::max(0.0, std::min(1.0, S));
+    I = std::max(0.0, std::min(1.0, I));
+    R = std::max(0.0, std::min(1.0, R));
     
     return {S, I, R};
 }
-
 // RK4 step function for SIR cell dynamics
+// Updated RK4 step function with stability checks
 SIR rk4Step(const SIR &current) {
+    // Ensure input values are valid
+    SIR validCurrent = {
+        std::max(0.0, std::min(1.0, current.S)),
+        std::max(0.0, std::min(1.0, current.I)),
+        std::max(0.0, std::min(1.0, current.R))
+    };
+    
     auto fS = [&](const SIR &state) -> double {
         return -beta * state.S * state.I;
     };
@@ -126,22 +163,39 @@ SIR rk4Step(const SIR &current) {
     
     SIR k1, k2, k3, k4, next, temp;
     
-    k1 = {dt * fS(current), dt * fI(current), dt * fR(current)};
-    temp = {current.S + 0.5 * k1.S, current.I + 0.5 * k1.I, current.R + 0.5 * k1.R};
+    k1 = {dt * fS(validCurrent), dt * fI(validCurrent), dt * fR(validCurrent)};
+    temp = {validCurrent.S + 0.5 * k1.S, validCurrent.I + 0.5 * k1.I, validCurrent.R + 0.5 * k1.R};
     k2 = {dt * fS(temp), dt * fI(temp), dt * fR(temp)};
-    temp = {current.S + 0.5 * k2.S, current.I + 0.5 * k2.I, current.R + 0.5 * k2.R};
+    temp = {validCurrent.S + 0.5 * k2.S, validCurrent.I + 0.5 * k2.I, validCurrent.R + 0.5 * k2.R};
     k3 = {dt * fS(temp), dt * fI(temp), dt * fR(temp)};
-    temp = {current.S + k3.S, current.I + k3.I, current.R + k3.R};
+    temp = {validCurrent.S + k3.S, validCurrent.I + k3.I, validCurrent.R + k3.R};
     k4 = {dt * fS(temp), dt * fI(temp), dt * fR(temp)};
     
-    next = {current.S + (k1.S + 2*k2.S + 2*k3.S + k4.S) / 6.0,
-            current.I + (k1.I + 2*k2.I + 2*k3.I + k4.I) / 6.0,
-            current.R + (k1.R + 2*k2.R + 2*k3.R + k4.R) / 6.0};
+    next = {validCurrent.S + (k1.S + 2*k2.S + 2*k3.S + k4.S) / 6.0,
+            validCurrent.I + (k1.I + 2*k2.I + 2*k3.I + k4.I) / 6.0,
+            validCurrent.R + (k1.R + 2*k2.R + 2*k3.R + k4.R) / 6.0};
+    
+    // Normalize to ensure S + I + R = 1
+    double sum = next.S + next.I + next.R;
+    if (sum > 0) {
+        next.S /= sum;
+        next.I /= sum;
+        next.R /= sum;
+    } else {
+        // Fallback if all zeros
+        next.S = 0.99;
+        next.I = 0.01;
+        next.R = 0.0;
+    }
+    
+    // Final bounds check
+    next.S = std::max(0.0, std::min(1.0, next.S));
+    next.I = std::max(0.0, std::min(1.0, next.I));
+    next.R = std::max(0.0, std::min(1.0, next.R));
+    
     return next;
 }
 
-// Update function for a block (or grid) of cells.
-// Later, you could extend this to include spatial interactions between cells.
 void updateGrid(std::vector<SIR> &grid) {
     std::vector<SIR> newGrid = grid;
     for (size_t i = 0; i < grid.size(); ++i) {
@@ -149,6 +203,7 @@ void updateGrid(std::vector<SIR> &grid) {
     }
     grid = newGrid;
 }
+
 
 int main(int argc, char *argv[]) {
     MPI_Init(&argc, &argv);
