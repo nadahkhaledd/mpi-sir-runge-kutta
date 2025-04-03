@@ -1,141 +1,283 @@
+#include <mpi.h>
 #include <iostream>
 #include <fstream>
 #include <sstream>
-
 #include <vector>
-#include <map>
 #include <cmath>
+#include <string>
 
-#include <mpi.h>
-#include <opencv2/core.hpp>
-#include <opencv2/ml.hpp>
-#include <opencv2/opencv.hpp>
+// Model parameters
+double beta = 0.5;
+double gammaRate = 0.1;
+double dt = 1;
+int numSteps = 1000;
 
-struct StateData {
-    std::string name;
-    double population;
-    std::string date;
-    double lat, lon;
-    int confirmed, deaths, recovered, active;
-    int blockId; // New field
+// SIR structure (normalized values, e.g., percentages)
+struct SIR {
+    double S, I, R;
 };
 
-// Function to read the CSV file
-std::vector<StateData> readCSV(const std::string& filename) {
-    std::vector<StateData> data;
-    std::ifstream file(filename);
-    std::string line;
-    
-    if (!file.is_open()) {
-        std::cerr << "Error opening file!" << std::endl;
-        return data;
+// Helper function: trim whitespace from a string (if needed)
+std::string trim(const std::string &s) {
+    size_t start = s.find_first_not_of(" \t\r\n");
+    size_t end = s.find_last_not_of(" \t\r\n");
+    return (start == std::string::npos) ? "" : s.substr(start, end - start + 1);
+}
+
+// Updated CSV parser that skips the header and parses the essential columns.
+// Assumes CSV header is: Province_State,Country_Region,Last_Update,Lat,Long_,Confirmed,Deaths,Recovered,Active,Date,...
+// and that columns of interest are in fixed positions.
+std::vector<std::vector<double>> loadUSStateData(const std::string& filename) {
+    std::ifstream infile(filename);
+    if (!infile) {
+        std::cerr << "Error opening file " << filename << "\n";
+        MPI_Abort(MPI_COMM_WORLD, 1);
     }
-
-    std::getline(file, line); // Skip header
-    while (std::getline(file, line)) {
-        std::stringstream ss(line);
-        StateData entry;
-        std::string temp;
-
-        std::getline(ss, entry.name, ',');
-        std::getline(ss, temp, ','); entry.population = std::stod(temp);
-        std::getline(ss, entry.date, ',');
-        std::getline(ss, temp, ','); entry.lat = std::stod(temp);
-        std::getline(ss, temp, ','); entry.lon = std::stod(temp);
-        std::getline(ss, temp, ','); entry.confirmed = std::stoi(temp);
-        std::getline(ss, temp, ','); entry.deaths = std::stoi(temp);
-        std::getline(ss, temp, ','); entry.recovered = std::stoi(temp);
-        std::getline(ss, temp, ','); entry.active = std::stoi(temp);
+    
+    std::string line;
+    // Read header and discard
+    if (!std::getline(infile, line)) {
+        std::cerr << "CSV file is empty.\n";
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+    
+    // Each row will be stored as a vector of double for [lat, long, Confirmed, Deaths, Recovered, Active]
+    std::vector<std::vector<double>> data;
+    while (std::getline(infile, line)) {
+        std::istringstream ss(line);
+        std::string token;
+        std::vector<std::string> tokens;
+        // Split line on commas
+        while (std::getline(ss, token, ',')) {
+            tokens.push_back(trim(token));
+        }
+        // Check if tokens have at least 9 columns (or as required)
+        if (tokens.size() < 9)
+            continue;
         
-        data.push_back(entry);
+        try {
+            double lat;
+            // For grouping by location we use Lat and Long_ (columns 3 and 4, index 3 and 4 if header is included)
+            try {
+                lat = std::stod(tokens[3]);  // Convert lat to double
+            } catch (const std::invalid_argument& e) {
+                std::cerr << "Invalid latitude value: '" << lat << "' at line " << line << std::endl;
+                continue;  // Skip this line or handle it accordingly
+            } catch (const std::out_of_range& e) {
+                std::cerr << "Latitude value out of range: '" << lat << "' at line " << line << std::endl;
+                continue;
+            }
+            //std::cout << "lat: " << lat << std::endl;
+            double lon = std::stod(tokens[4]);
+            std::cout << lon<< std::endl;
+            double confirmed = std::stod(tokens[5]);
+            std::cout << confirmed<< std::endl;
+            double deaths = std::stod(tokens[6]);
+            std::cout << deaths<< std::endl;
+            double recovered = std::stod(tokens[7]);
+            std::cout << recovered<< std::endl;
+            double active = std::stod(tokens[8]);
+            std::cout << active<< std::endl;
+
+            
+            // We now store these values.
+            data.push_back({lon, confirmed, deaths, recovered, active});
+        } catch (const std::exception &e) {
+            std::cerr << "Parsing error: " << e.what() << "\n";
+            continue;
+        }
     }
     return data;
 }
 
-// Function to assign block IDs using OpenCV k-means
-void assignBlockIds(std::vector<StateData>& data, int numBlocks) {
-    // Prepare the data for OpenCV k-means
-    std::vector<cv::Point2f> locations;
-    for (const auto& entry : data) {
-        locations.emplace_back(entry.lat, entry.lon);
-    }
-
-    // Convert the data to OpenCV's cv::Mat (points matrix)
-    cv::Mat points(locations.size(), 1, CV_32FC2);  // CV_32FC2 means 2D float matrix
-    for (size_t i = 0; i < locations.size(); ++i) {
-        points.at<cv::Vec2f>(i) = cv::Vec2f(locations[i].x, locations[i].y);
-    }
-
-    // Apply k-means clustering using OpenCV
-    cv::Mat labels;
-    cv::Mat centers;
-    int attempts = 10; // Number of times the algorithm is executed with different initializations
-    cv::kmeans(points, numBlocks, labels, cv::TermCriteria(cv::TermCriteria::EPS + cv::TermCriteria::COUNT, 100, 0.2), attempts, cv::KMEANS_PP_CENTERS, centers);
-
-    // Assign block IDs based on the cluster labels
-    for (size_t i = 0; i < data.size(); ++i) {
-        data[i].blockId = labels.at<int>(i);  // Set blockId from the k-means cluster label
-    }
-}
-
-void saveCSV(const std::vector<StateData>& data, const std::string& filename) {
-    std::ofstream file(filename);
-    file << "Province_State,Population,Date,Lat,Long,Confirmed,Deaths,Recovered,Active,BlockId\n";
+// Mapping dataset columns to SIR compartments.
+// For simplicity, we assume that we normalize to 1 (i.e., percentages)
+// and that population is estimated or assumed to be 1.
+// In a real implementation, you would use actual population data.
+SIR mapToSIR(const std::vector<double>& rowData) {
+    // rowData: [lat, lon, confirmed, deaths, recovered, active]
+    // One approach: let I be the normalized 'active' fraction, R be recovered+deaths,
+    // and S = 1 - I - R.
+    double totalCases = rowData[2]; // confirmed cases
+    double removed = rowData[4] + rowData[3]; // recovered + deaths
+    double active = rowData[5];
     
-    for (const auto& entry : data) {
-        file << entry.name << "," << entry.population << "," << entry.date << "," 
-             << entry.lat << "," << entry.lon << "," << entry.confirmed << ","
-             << entry.deaths << "," << entry.recovered << "," << entry.active << ","
-             << entry.blockId << "\n";
-    }
+    // Here, we assume the population is large compared to the cases
+    // so that we can normalize (alternatively, use a known population for each state).
+    // For demonstration, we treat the fractions as:
+    double I = active;       // in a normalized setting
+    double R = removed;      // in a normalized setting
+    double S = 1.0 - I - R;  // ensure total is 1
+    
+    return {S, I, R};
 }
 
-int main(int argc, char** argv) {
+// RK4 step function for SIR cell dynamics
+SIR rk4Step(const SIR &current) {
+    auto fS = [&](const SIR &state) -> double {
+        return -beta * state.S * state.I;
+    };
+    auto fI = [&](const SIR &state) -> double {
+        return beta * state.S * state.I - gammaRate * state.I;
+    };
+    auto fR = [&](const SIR &state) -> double {
+        return gammaRate * state.I;
+    };
+    
+    SIR k1, k2, k3, k4, next, temp;
+    
+    k1 = {dt * fS(current), dt * fI(current), dt * fR(current)};
+    temp = {current.S + 0.5 * k1.S, current.I + 0.5 * k1.I, current.R + 0.5 * k1.R};
+    k2 = {dt * fS(temp), dt * fI(temp), dt * fR(temp)};
+    temp = {current.S + 0.5 * k2.S, current.I + 0.5 * k2.I, current.R + 0.5 * k2.R};
+    k3 = {dt * fS(temp), dt * fI(temp), dt * fR(temp)};
+    temp = {current.S + k3.S, current.I + k3.I, current.R + k3.R};
+    k4 = {dt * fS(temp), dt * fI(temp), dt * fR(temp)};
+    
+    next = {current.S + (k1.S + 2*k2.S + 2*k3.S + k4.S) / 6.0,
+            current.I + (k1.I + 2*k2.I + 2*k3.I + k4.I) / 6.0,
+            current.R + (k1.R + 2*k2.R + 2*k3.R + k4.R) / 6.0};
+    return next;
+}
+
+// Update function for a block (or grid) of cells.
+// Later, you could extend this to include spatial interactions between cells.
+void updateGrid(std::vector<SIR> &grid) {
+    std::vector<SIR> newGrid = grid;
+    for (size_t i = 0; i < grid.size(); ++i) {
+        newGrid[i] = rk4Step(grid[i]);
+    }
+    grid = newGrid;
+}
+
+int main(int argc, char *argv[]) {
     MPI_Init(&argc, &argv);
+    
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
-
-    std::vector<StateData> dataset;
+    
+    // Process 0 reads the entire dataset.
+    std::vector<std::vector<double>> fullData;
     if (rank == 0) {
-        // Read the dataset on rank 0 and distribute to all other ranks
-        dataset = readCSV("covid_data.csv");
-
-        // Distribute the data among MPI processes (you can use MPI_Scatter here)
-        int dataPerProcess = dataset.size() / size;
-        std::vector<StateData> localData(dataPerProcess);
-
-        // Scatter the dataset across processes
-        MPI_Scatter(dataset.data(), dataPerProcess * sizeof(StateData), MPI_BYTE, 
-                    localData.data(), dataPerProcess * sizeof(StateData), MPI_BYTE, 
-                    0, MPI_COMM_WORLD);
-
-        // Each process runs the k-means algorithm on its local data
-        assignBlockIds(localData, dataPerProcess / 4);
-
-        // Gather the results back to rank 0
-        MPI_Gather(localData.data(), dataPerProcess * sizeof(StateData), MPI_BYTE, 
-                   dataset.data(), dataPerProcess * sizeof(StateData), MPI_BYTE, 
-                   0, MPI_COMM_WORLD);
-
-        // Rank 0 saves the updated data
-        saveCSV(dataset, "updated_covid_data.csv");
-    } else {
-        // Non-rank 0 processes receive their part of the data
-        int dataPerProcess = dataset.size() / size;
-        std::vector<StateData> localData(dataPerProcess);
-
-        MPI_Scatter(nullptr, 0, MPI_BYTE, localData.data(), dataPerProcess * sizeof(StateData), MPI_BYTE, 
-                    0, MPI_COMM_WORLD);
-
-        // Perform clustering locally
-        assignBlockIds(localData, dataPerProcess / 4);
-
-        // Send the results back to rank 0
-        MPI_Gather(localData.data(), dataPerProcess * sizeof(StateData), MPI_BYTE, 
-                   nullptr, 0, MPI_BYTE, 0, MPI_COMM_WORLD);
+        fullData = loadUSStateData("initial_conditions.csv");
+        std::cout << "Total rows in input dataset: " << fullData.size() << "\n";
     }
-
+    
+    // For this demonstration, assume we perform a simple grouping based on rank.
+    // In practice, you would implement a clustering (or nearest-neighbor) algorithm using lat/long.
+    // Here we simply partition the dataset rows among processes.
+    int totalRows = 0;
+    if (rank == 0) {
+        totalRows = fullData.size();
+    }
+    MPI_Bcast(&totalRows, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    
+    int rowsPerProc = totalRows / size;
+    int extra = totalRows % size;
+    int startIndex, localRows;
+    if (rank < extra) {
+        localRows = rowsPerProc + 1;
+        startIndex = rank * localRows;
+    } else {
+        localRows = rowsPerProc;
+        startIndex = rank * localRows + extra;
+    }
+    
+    // Each process creates its local vector of SIR values from its portion of the dataset.
+    std::vector<SIR> localGrid;
+    if (rank == 0) {
+        // Process 0 scatters its own portion and then sends the rest to other processes.
+        for (int i = startIndex; i < startIndex + localRows; i++) {
+            localGrid.push_back(mapToSIR(fullData[i]));
+        }
+        // Now send portions to other processes
+        for (int proc = 1; proc < size; proc++) {
+            int procRows = (proc < extra) ? rowsPerProc + 1 : rowsPerProc;
+            int procStart = (proc < extra) ? proc * (rowsPerProc + 1) : proc * rowsPerProc + extra;
+            std::vector<double> sendBuffer;
+            // Pack the SIR data as three doubles per row
+            for (int i = procStart; i < procStart + procRows; i++) {
+                SIR cell = mapToSIR(fullData[i]);
+                sendBuffer.push_back(cell.S);
+                sendBuffer.push_back(cell.I);
+                sendBuffer.push_back(cell.R);
+            }
+            MPI_Send(sendBuffer.data(), sendBuffer.size(), MPI_DOUBLE, proc, 0, MPI_COMM_WORLD);
+        }
+    } else {
+        // Other processes receive their portion
+        std::vector<double> recvBuffer(localRows * 3);
+        MPI_Recv(recvBuffer.data(), localRows * 3, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        for (int i = 0; i < localRows; i++) {
+            SIR cell = {recvBuffer[3*i], recvBuffer[3*i+1], recvBuffer[3*i+2]};
+            localGrid.push_back(cell);
+        }
+    }
+    
+    // Simulation: record evolution over time.
+    // We will output time, S, I, R for each cell (or an average per block).
+    // Here, for simplicity, we update each cell independently.
+    std::vector<std::vector<double>> localResults; // Each entry: [time, avg_S, avg_I, avg_R]
+    for (int step = 0; step < numSteps; ++step) {
+        // Update local grid
+        updateGrid(localGrid);
+        
+        // Optionally: include spatial interactions among cells in the block
+        
+        // For demonstration, compute average S, I, R over the local block
+        double sumS = 0, sumI = 0, sumR = 0;
+        for (auto &cell : localGrid) {
+            sumS += cell.S;
+            sumI += cell.I;
+            sumR += cell.R;
+        }
+        double avgS = sumS / localGrid.size();
+        double avgI = sumI / localGrid.size();
+        double avgR = sumR / localGrid.size();
+        double timeVal = step * dt;
+        localResults.push_back({timeVal, avgS, avgI, avgR});
+        
+        // Synchronize processes if needed
+        MPI_Barrier(MPI_COMM_WORLD);
+    }
+    
+    // Gather results at process 0
+    // (For simplicity, assume each process has the same number of time steps.)
+    int steps = localResults.size();
+    std::vector<double> localFlat;
+    for (auto &row : localResults) {
+        // Flatten each row [time, avg_S, avg_I, avg_R]
+        localFlat.insert(localFlat.end(), row.begin(), row.end());
+    }
+    
+    std::vector<double> globalFlat;
+    if (rank == 0) {
+        globalFlat.resize(steps * 4 * size);
+    }
+    MPI_Gather(localFlat.data(), steps * 4, MPI_DOUBLE,
+               globalFlat.data(), steps * 4, MPI_DOUBLE,
+               0, MPI_COMM_WORLD);
+    
+    // Process 0 writes the simulation evolution to a CSV file.
+    if (rank == 0) {
+        std::ofstream outfile("simulation_results.csv");
+        outfile << "Process,Time,S,I,R\n";
+        // Each process’s data is concatenated.
+        for (int proc = 0; proc < size; proc++) {
+            for (int i = 0; i < steps; i++) {
+                int index = (proc * steps + i) * 4;
+                outfile << proc << "," 
+                        << globalFlat[index] << ","
+                        << globalFlat[index+1] << ","
+                        << globalFlat[index+2] << ","
+                        << globalFlat[index+3] << "\n";
+            }
+        }
+        outfile.close();
+        std::cout << "Simulation evolution saved to simulation_results.csv\n";
+    }
+    
     MPI_Finalize();
     return 0;
 }
