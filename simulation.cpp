@@ -219,9 +219,7 @@ int main(int argc, char *argv[]) {
         // Process 0 can now output final simulation results (e.g., save to CSV)
         std::cout << "simulation is being saved\n";
         std::ofstream outfile("simulation_results.csv");
-        std::cout << "simulation 1\n";
         outfile << "row,col,S,I,R\n";
-        std::cout << "simulation 2\n";
         // For simplicity, assume grid was gathered into a global grid
         // Here we output from process 0's local grid as an example:
         for (int i = 0; i < localRows; ++i) {
@@ -232,7 +230,7 @@ int main(int argc, char *argv[]) {
                         << localGrid[i][j].R << "\n";
             }
         }
-        std::cout << "simulation 3\n";
+        std::cout << "simulation finished\n";
         outfile.close();
         std::cout << "Simulation results saved to simulation_results.csv\n";
     }
