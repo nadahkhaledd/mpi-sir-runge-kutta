@@ -26,33 +26,49 @@ std::vector<std::vector<SIR>> loadInitialData(const std::string& filename, int& 
         std::cerr << "Error opening file " << filename << "\n";
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
-    
+
     std::string line;
-    // First, read the dimensions from the first line (optional)
-    std::getline(infile, line);
-    std::istringstream dimStream(line);
-    dimStream >> nrows >> ncols;
     
-    // Initialize grid with zeros
+    // Read the first line to get grid dimensions
+    if (std::getline(infile, line)) {
+        std::istringstream dimStream(line);
+        if (!(dimStream >> nrows >> ncols)) {  // Ensure we correctly extract numbers
+            std::cerr << "Invalid first line format in CSV (should be: nrows ncols)\n";
+            MPI_Abort(MPI_COMM_WORLD, 1);
+        }
+    } else {
+        std::cerr << "Empty CSV file!\n";
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+
+    // Initialize grid with default values
     std::vector<std::vector<SIR>> grid(nrows, std::vector<SIR>(ncols, {1.0, 0.0, 0.0}));
-    
+
     // Read each subsequent line
     while (std::getline(infile, line)) {
         std::istringstream ss(line);
         std::string token;
         int r, c;
         double S, I, R;
-        std::getline(ss, token, ','); r = std::stoi(token);
-        std::getline(ss, token, ','); c = std::stoi(token);
-        std::getline(ss, token, ','); S = std::stod(token);
-        std::getline(ss, token, ','); I = std::stod(token);
-        std::getline(ss, token, ','); R = std::stod(token);
-        if(r < nrows && c < ncols) {
+
+        // Extract and validate values
+        if (!std::getline(ss, token, ',') || token.empty() || !(std::istringstream(token) >> r)) continue;
+        if (!std::getline(ss, token, ',') || token.empty() || !(std::istringstream(token) >> c)) continue;
+        if (!std::getline(ss, token, ',') || token.empty() || !(std::istringstream(token) >> S)) S = 1.0; // Default value
+        if (!std::getline(ss, token, ',') || token.empty() || !(std::istringstream(token) >> I)) I = 0.0;
+        if (!std::getline(ss, token, ',') || token.empty() || !(std::istringstream(token) >> R)) R = 0.0;
+
+        // Ensure valid grid indices
+        if (r >= 0 && r < nrows && c >= 0 && c < ncols) {
             grid[r][c] = {S, I, R};
+        } else {
+            std::cerr << "Warning: Skipping invalid row/column indices (" << r << "," << c << ")\n";
         }
     }
+
     return grid;
 }
+
 
 // RK4 step function for one cell (local SIR dynamics)
 // Computes the new SIR state given current state, parameters and time step
