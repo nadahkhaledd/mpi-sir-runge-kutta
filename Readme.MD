@@ -2,7 +2,7 @@
 This project implements a parallel SIR (Susceptible-Infected-Recovered) model using MPI for simulating the spread of infectious diseases across a grid of cells. Each cell represents a population unit, and the simulation evolves over discrete time steps.
 
 ## 📁Project Structure
-`
+
 ├── SIRCell.cpp / .h         # Represents an individual cell in the grid (SIR logic per cell)
 
 ├── SIRModel.cpp / .h        # Manages the logic for the overall SIR simulation model
