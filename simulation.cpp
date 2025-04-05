@@ -103,11 +103,9 @@ std::vector<std::vector<double>> loadUSStateData(const std::string& filename) {
 }
 // Mapping dataset columns to SIR compartments.
 // For simplicity, we assume that we normalize to 1 (i.e., percentages)
-// and that population is estimated or assumed to be 1.
-// In a real implementation, you would use actual population data.
 // Updated mapToSIR function
 SIR mapToSIR(const std::vector<double>& rowData) {
-    // rowData: [lat, lon, confirmed, deaths, recovered, active]
+    // rowData: [lat, lon, confirmed, deaths, recovered, active]  //first 3 rows ignored for numbered data
     
     // Calculate total population - if not available, estimate based on cases
     double totalPopulation = std::max(1000.0, rowData[2] + 1000.0); // Confirmed cases plus buffer
@@ -272,6 +270,7 @@ int main(int argc, char *argv[]) {
     
     // Simulation: record evolution over time.
     // We will output time, S, I, R for each cell (or an average per block).
+    // TODO: handle evolution of cases along each day since the initial data
     // Here, for simplicity, we update each cell independently.
     std::vector<std::vector<double>> localResults; // Each entry: [time, avg_S, avg_I, avg_R]
     for (int step = 0; step < numSteps; ++step) {
