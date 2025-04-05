@@ -3,7 +3,7 @@ This project implements a parallel SIR (Susceptible-Infected-Recovered) model us
 
 📁 ## Project Structure
 
-.
+`
 ├── SIRCell.cpp / .h         # Represents an individual cell in the grid (SIR logic per cell)
 ├── SIRModel.cpp / .h        # Manages the logic for the overall SIR simulation model
 ├── GridSimulation.cpp / .h  # Handles the 2D grid of cells and their interactions
@@ -12,7 +12,8 @@ This project implements a parallel SIR (Susceptible-Infected-Recovered) model us
 ├── main.cpp                 # Entry point; sets up simulation and runs it
 ├── Makefile                 # Build instructions
 └── README.md                # This file
-🧠 ## File Descriptions
+`
+## 🧠 File Descriptions
 SIRCell.cpp / SIRCell.h
 Defines the behavior of a single cell in the simulation. Each cell holds:
 
