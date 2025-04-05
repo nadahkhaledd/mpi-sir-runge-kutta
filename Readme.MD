@@ -5,12 +5,19 @@ This project implements a parallel SIR (Susceptible-Infected-Recovered) model us
 
 `
 ├── SIRCell.cpp / .h         # Represents an individual cell in the grid (SIR logic per cell)
+
 ├── SIRModel.cpp / .h        # Manages the logic for the overall SIR simulation model
+
 ├── GridSimulation.cpp / .h  # Handles the 2D grid of cells and their interactions
+
 ├── MPIHandler.cpp / .h      # Manages MPI communication between processes
+
 ├── CSVParser.cpp / .h       # Parses input CSV files for initial conditions
+
 ├── main.cpp                 # Entry point; sets up simulation and runs it
+
 ├── Makefile                 # Build instructions
+
 └── README.md                # This file
 `
 ## 🧠 File Descriptions
