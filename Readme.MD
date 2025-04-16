@@ -17,6 +17,12 @@ This project implements a parallel SIR (Susceptible-Infected-Recovered) model us
 
 ├── Makefile                 # Build instructions
 
+├── test.cpp                 # Use Grid search method to findout the optimal hyperparameter(gamma beta..)
+
+├── testResult.csv           # Show the time cost and accuracy by different set of parameter
+
+├── covid_data.csv           # dataset for test.cpp to find out the hyperparameter
+
 └── README.md                # This file
 `
 ## 🧠 File Descriptions
@@ -56,6 +62,14 @@ Parses input arguments
 Sets up the simulation
 Runs the simulation loop
 Finalizes MPI
+
+
+The testResult.csv record the cost(running time) and accuracy(eval based on averageInfectious)
+
+The test result report shows the accuracy and code running efficiency of different parameters under different value combinations.
+
+In general, according to the test results and data analysis, the change of dt will not cause huge cumulative errors in the accuracy of the results, but will significantly increase the computing cost; gamma and beta will not have too much impact on the computing cost, but when these two parameters are large, it will cause numerical instability and lead to numerical errors.
+
 
  ## 🛠️ Building the Project
 Make sure you have MPI installed (e.g., OpenMPI or MPICH).
