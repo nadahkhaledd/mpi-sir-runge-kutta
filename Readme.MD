@@ -1,31 +1,38 @@
 # 🦠 SIR Simulation with MPI
-This project implements a parallel SIR (Susceptible-Infected-Recovered) model using MPI for simulating the spread of infectious diseases across a grid of cells. Each cell represents a population unit, and the simulation evolves over discrete time steps.
+This project implements a parallel SIR (Susceptible-Infected-Recovered) model using MPI to simulate the spread of infectious diseases across a grid of cells. Each cell represents a population unit, and the simulation evolves over discrete time steps.
 
 ## 📁 Project Structure
 
-├── SIRCell.cpp / .h         # Represents an individual cell in the grid (SIR logic per cell)  
-├── SIRModel.cpp / .h        # Manages the logic for the overall SIR simulation model  
-├── GridSimulation.cpp / .h  # Handles the 2D grid of cells and their interactions  
-├── MPIHandler.cpp / .h      # Manages MPI communication between processes  
-├── CSVParser.cpp / .h       # Parses input CSV files for initial conditions  
-├── main.cpp                 # Entry point; sets up simulation and runs it  
-├── Makefile                 # Build instructions  
-└── README.md                # This file  
+├── src/  
+│   ├── SIRCell.cpp / .h         # Represents an individual cell in the grid (SIR logic per cell)  
+│   ├── SIRModel.cpp / .h        # Manages the logic for the overall SIR simulation model  
+│   ├── GridSimulation.cpp / .h  # Handles the 2D grid of cells and their interactions  
+│   ├── MPIHandler.cpp / .h      # Manages MPI communication between processes  
+│   ├── CSVParser.cpp / .h       # Parses input CSV files for initial conditions  
+│   └── main.cpp                 # Entry point; sets up simulation and runs it  
+├── scripts/  
+│   └── sort_csv_by_states.py    # Script to preprocess and sort input CSV data by US states  
+├── data/  
+│   ├── initial_conditions.csv   # Input data for the simulation  
+│   └── sorted_initial_conditions.csv # Preprocessed and sorted input data  
+├── output/                      # Directory for simulation output  
+├── Makefile                     # Build instructions  
+└── README.md                    # This file  
 
 ## 🧠 File Descriptions
 
-### SIRCell.cpp / SIRCell.h
+### src/SIRCell.cpp / src/SIRCell.h
 Defines the behavior of a single cell in the simulation. Each cell holds:
-- Susceptible, infected, recovered counts
+- Susceptible, infected, and recovered counts
 - Methods for updating state based on infection and recovery rates
 
-### SIRModel.cpp / SIRModel.h
+### src/SIRModel.cpp / src/SIRModel.h
 Encapsulates the simulation model logic:
 - Defines infection and recovery rates
 - Applies updates to all cells
 - Handles time step progression
 
-### GridSimulation.cpp / GridSimulation.h
+### src/GridSimulation.cpp / src/GridSimulation.h
 Handles the 2D grid environment:
 - Manages spatial relationships between cells
 - Spreads infection between neighboring cells
@@ -77,23 +84,11 @@ output/sir_simulation
 Run the simulation using `mpirun` or `mpiexec`, specifying the number of processes. For example:
 
 ```bash
-mpirun -np 4 ./output/sir_simulation ./data/<input_file.csv> [options]
+mpirun -np 4 ./sir_simulation [options]
 ```
-
-### Example Command:
-```bash
-mpirun -np 4 ./output/sir_simulation ./data/initial_conditions.csv --infection-rate 0.1 --recovery-rate 0.05 --steps 100
-```
-
-### Arguments:
-- `<input_file.csv>`: Input CSV file with initial conditions.
-- `--infection-rate`: Infection rate (e.g., `0.1`).
-- `--recovery-rate`: Recovery rate (e.g., `0.05`).
-- `--steps`: Number of simulation steps (e.g., `100`).
 
 ### Notes:
 - Ensure that MPI is installed on your system (e.g., OpenMPI or MPICH).
-- Replace `<input_file.csv>` with the path to your input file.
 - Add any additional options as needed for your simulation.
 
 ## 🧹 Cleaning the Project
