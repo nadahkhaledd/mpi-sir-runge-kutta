@@ -76,7 +76,7 @@ The main entry point:
 This will compile all `.cpp` files and produce the executable:
 
 ```bash
-output/sir_simulation
+sir_simulation
 ```
 
 ## 🚀 Running the Simulation
