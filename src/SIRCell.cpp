@@ -1,4 +1,4 @@
-#include "SIRCell.h"
+#include "../header/SIRCell.h"
 #include <algorithm>
 #include <cmath>
 

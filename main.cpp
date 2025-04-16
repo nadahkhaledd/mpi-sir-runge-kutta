@@ -1,7 +1,7 @@
-#include "MPIHandler.h"
-#include "SIRModel.h"
-#include "CSVParser.h"
-#include "GridSimulation.h"
+#include "header/MPIHandler.h"
+#include "header/SIRModel.h"
+#include "header/CSVParser.h"
+#include "header/GridSimulation.h"
 #include <iostream>
 
 int main(int argc, char *argv[]) {

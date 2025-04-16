@@ -1,5 +1,5 @@
-#include "MPIHandler.h"
-#include "CSVParser.h"
+#include "../header/MPIHandler.h"
+#include "../header/CSVParser.h"
 #include <mpi.h>
 #include <iostream>
 #include <fstream>

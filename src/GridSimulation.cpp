@@ -1,4 +1,4 @@
-#include "GridSimulation.h"
+#include "../header/GridSimulation.h"
 #include <mpi.h>
 
 GridSimulation::GridSimulation(const SIRModel& m, int mpiRank, int mpiSize) 
