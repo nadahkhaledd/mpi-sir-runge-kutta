@@ -21,18 +21,18 @@ This project implements a parallel SIR (Susceptible-Infected-Recovered) model us
 
 ## 🧠 File Descriptions
 
-### src/SIRCell.cpp / src/SIRCell.h
+### SIRCell.cpp / SIRCell.h
 Defines the behavior of a single cell in the simulation. Each cell holds:
 - Susceptible, infected, and recovered counts
 - Methods for updating state based on infection and recovery rates
 
-### src/SIRModel.cpp / src/SIRModel.h
+### SIRModel.cpp / SIRModel.h
 Encapsulates the simulation model logic:
 - Defines infection and recovery rates
 - Applies updates to all cells
 - Handles time step progression
 
-### src/GridSimulation.cpp / src/GridSimulation.h
+### GridSimulation.cpp / GridSimulation.h
 Handles the 2D grid environment:
 - Manages spatial relationships between cells
 - Spreads infection between neighboring cells
