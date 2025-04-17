@@ -1,8 +1,11 @@
-#include "CSVParser.h"
+#include "../header/CSVParser.h"
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <mpi.h>
+#include <unordered_map>
+#include <map>
+#include <algorithm>
 
 std::string CSVParser::trim(const std::string &s) {
     size_t start = s.find_first_not_of(" \t\r\n");

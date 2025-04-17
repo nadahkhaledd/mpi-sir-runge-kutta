@@ -85,7 +85,7 @@ def plot_sir_stacked_area(df):
 # ----------------------------
 if __name__ == "__main__":
     # Load data
-    filename = "simulation_results.csv"  # Change this if your file has a different name
+    filename = "./../simulation_results.csv"  # Change this if your file has a different name
     data = load_simulation_data(filename)
 
     if data is not None:

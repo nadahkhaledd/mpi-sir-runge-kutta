@@ -1,1 +1,5 @@
+<<<<<<< HEAD
 .vscode/
+=======
+*.o
+>>>>>>> task/feature2

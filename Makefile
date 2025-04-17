@@ -1,19 +1,26 @@
 CXX = mpic++    
 CXXFLAGS = -Wall -O2    
 
-SRCS = SIRCell.cpp CSVParser.cpp SIRModel.cpp GridSimulation.cpp MPIHandler.cpp main.cpp        
-OBJS = $(SRCS:.cpp=.o)  
+# Dynamically find all .cpp files in src/ and include main.cpp explicitly
+SRCS = $(wildcard src/*.cpp) main.cpp        
+OBJS = $(patsubst src/%.cpp,output/%.o,$(SRCS))  
+OBJS := $(patsubst main.cpp,output/main.o,$(OBJS))  # Handle main.cpp separately
 EXEC = sir_simulation   
 
 all: $(EXEC)
 
 $(EXEC): $(OBJS)
-	    $(CXX) $(CXXFLAGS) -o $@ $(OBJS)   
+	$(CXX) $(CXXFLAGS) -o $@ $(OBJS)   
 
-%.o: %.cpp
-	    $(CXX) $(CXXFLAGS) -c $< -o $@
+output/%.o: src/%.cpp
+	mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+output/main.o: main.cpp
+	mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
-	    rm -f $(OBJS) $(EXEC)
+	rm -f $(OBJS) $(EXEC)
 
 .PHONY: all clean
