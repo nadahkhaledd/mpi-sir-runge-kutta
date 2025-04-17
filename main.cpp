@@ -43,7 +43,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Create SIR model with parameters
-    SIRModel model(0.3, 0.1, 0.1, 1000);
+    SIRModel model(0.3, 0.1, 0.2, 100);
 
     // Load data (only process 0)
     std::vector<std::vector<double>> fullData;

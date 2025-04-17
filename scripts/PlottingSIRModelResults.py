@@ -1,5 +1,6 @@
 import pandas as pd
 import matplotlib.pyplot as plt
+
 # -------------------------------------------------------------------------------------
 # ABOUT THE CHARTS:
 #
@@ -80,12 +81,9 @@ def plot_sir_stacked_area(df):
     print("Saved SIR stacked area plot to sir_stacked_area_plot.png")
 
 
-# ----------------------------
-# Main Execution
-# ----------------------------
 if __name__ == "__main__":
     # Load data
-    filename = "./../simulation_results.csv"  # Change this if your file has a different name
+    filename = "./../simulation_results.csv"
     data = load_simulation_data(filename)
 
     if data is not None:
