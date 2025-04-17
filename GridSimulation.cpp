@@ -1,5 +1,6 @@
 #include "GridSimulation.h"
 #include <mpi.h>
+#include <unordered_map>
 
 GridSimulation::GridSimulation(const SIRModel& m, int mpiRank, int mpiSize) 
     : model(m), rank(mpiRank), size(mpiSize) {}
@@ -16,6 +17,10 @@ int GridSimulation::getLocalSize() const {
     return grid.size();
 }
 
+void GridSimulation::setNeighborMap(const std::unordered_map<int, std::vector<int>>& map) {
+    neighborMap = map;
+}
+
 void GridSimulation::updateGrid() {
     std::vector<SIRCell> newGrid = grid;
     for (size_t i = 0; i < grid.size(); ++i) {
@@ -24,12 +29,37 @@ void GridSimulation::updateGrid() {
     grid = newGrid;
 }
 
+void GridSimulation::updateGridNew() {
+    std::vector<SIRCell> newGrid = grid;
+
+    for (size_t i = 0; i < grid.size(); ++i) {
+        std::vector<SIRCell> neighbors;
+
+        // Get neighbors from map (if exists)
+        if (neighborMap.find(i) != neighborMap.end()) {
+            const std::vector<int>& neighborIDs = neighborMap[i];
+            for (int j : neighborIDs) {
+                if (j >= 0 && j < static_cast<int>(grid.size())) {
+                    neighbors.push_back(grid[j]);
+                }
+            }
+        }
+
+        // Use model to compute update using neighbors
+        newGrid[i] = model.rk4StepWithNeighbors(grid[i], neighbors);
+    }
+
+    grid = newGrid;
+}
+
+
 std::vector<std::vector<double>> GridSimulation::runSimulation() {
     std::vector<std::vector<double>> results; // [time, avg_S, avg_I, avg_R]
     
     for (int step = 0; step < model.getNumSteps(); ++step) {
         // Update grid
-        updateGrid();
+        //updateGrid();
+        updateGridNew();
         
         // Compute average S, I, R
         double sumS = 0, sumI = 0, sumR = 0;

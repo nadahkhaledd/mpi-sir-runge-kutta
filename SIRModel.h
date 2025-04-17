@@ -2,6 +2,7 @@
 #define SIRMODEL_H
 
 #include "SIRCell.h"
+#include <vector>
 
 class SIRModel {
 private:
@@ -21,6 +22,8 @@ public:
     
     // RK4 step function for SIR cell dynamics
     SIRCell rk4Step(const SIRCell &current) const;
+    SIRCell rk4StepWithNeighbors(const SIRCell& current, const std::vector<SIRCell>& neighbors) const;
+
 };
 
 #endif // SIRMODEL_H
