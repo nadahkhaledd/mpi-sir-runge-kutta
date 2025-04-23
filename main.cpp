@@ -48,7 +48,7 @@ int main(int argc, char *argv[]) {
     // Load data (only process 0)
     std::vector<std::vector<double>> fullData;
     if (mpi.getRank() == 0) {
-        fullData = CSVParser::loadUSStateData("./data/sorted_initial_conditions.csv");
+        fullData = CSVParser::loadUSStateData("../disease-simulation/data/sorted_initial_conditions.csv");
         std::cout << "Total rows in input dataset: " << fullData.size() << "\n";
 
         // Create cells and blocks using the sorted dataset
