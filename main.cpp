@@ -51,9 +51,9 @@ int main(int argc, char *argv[]) {
         fullData = CSVParser::loadUSStateData("./data/sorted_initial_conditions.csv");
         std::cout << "Total rows in input dataset: " << fullData.size() << "\n";
 
-        // Create cells and blocks using the sorted dataset
+        // Create cells and dynamically divide into optimal blocks
         auto cells = GridSimulation::createCellsMap();
-        auto blocks = GridSimulation::divideIntoBlocks(cells, blockSize);
+        auto blocks = GridSimulation::divideIntoOptimalBlocks(cells, mpi.getSize());
 
         // Debug: Print blocks
         for (const auto& [blockId, cellList] : blocks) {

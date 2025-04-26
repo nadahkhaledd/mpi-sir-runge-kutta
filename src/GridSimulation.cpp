@@ -84,7 +84,7 @@ std::map<std::string, int> GridSimulation::createCellsMap() {
 }
 
 std::map<int, std::list<int>> GridSimulation::divideIntoBlocks(
-    const std::map<std::string, int>& cells, int blockSize) {
+    const std::map<std::string, int>& cells, int numBlocks) {
     std::map<int, std::list<int>> blocks;
 
     // Extract and sort cell IDs
@@ -94,16 +94,27 @@ std::map<int, std::list<int>> GridSimulation::divideIntoBlocks(
     }
     std::sort(sortedCellIds.begin(), sortedCellIds.end());
 
+    // Calculate block size dynamically
+    int blockSize = sortedCellIds.size() / numBlocks;
+    int extra = sortedCellIds.size() % numBlocks;
+
     // Assign sorted cell IDs to blocks
-    int blockId = 0;
-    for (size_t i = 0; i < sortedCellIds.size(); ++i) {
-        if (i > 0 && i % blockSize == 0) {
-            blockId++;
+    int startIndex = 0;
+    for (int blockId = 0; blockId < numBlocks; ++blockId) {
+        int currentBlockSize = blockSize + (blockId < extra ? 1 : 0); // Distribute remainder evenly
+        for (int i = 0; i < currentBlockSize; ++i) {
+            blocks[blockId].push_back(sortedCellIds[startIndex++]);
         }
-        blocks[blockId].push_back(sortedCellIds[i]);
     }
 
     return blocks;
+}
+
+std::map<int, std::list<int>> GridSimulation::divideIntoOptimalBlocks(
+    const std::map<std::string, int>& cells, int numProcesses) {
+    // Dynamically determine the optimal number of blocks
+    int numBlocks = std::max(1, numProcesses * 2); // Example heuristic: 2 blocks per process
+    return divideIntoBlocks(cells, numBlocks);
 }
 
 std::vector<std::vector<double>> GridSimulation::runSimulation() {

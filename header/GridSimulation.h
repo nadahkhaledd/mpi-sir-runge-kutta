@@ -37,6 +37,8 @@ public:
     static std::map<std::string, int> createCellsMap();
     static std::map<int, std::list<int>> divideIntoBlocks(
         const std::map<std::string, int>& cells, int blockSize);
+    static std::map<int, std::list<int>> divideIntoOptimalBlocks(
+        const std::map<std::string, int>& cells, int numProcesses);
 };
 
 #endif // GRIDSIMULATION_H
