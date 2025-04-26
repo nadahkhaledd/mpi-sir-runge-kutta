@@ -59,6 +59,20 @@ void GridSimulation::updateGridNew() {
         newGrid[i] = model.rk4StepWithNeighbors(grid[i], neighbors);
     }
 
+    // Normalize the grid to ensure S + I + R = 1 for each cell
+    for (auto& cell : newGrid) {
+        double sum = cell.getS() + cell.getI() + cell.getR();
+        if (sum > 0) {
+            cell.setS(cell.getS() / sum);
+            cell.setI(cell.getI() / sum);
+            cell.setR(cell.getR() / sum);
+        } else {
+            cell.setS(1.0);
+            cell.setI(0.0);
+            cell.setR(0.0);
+        }
+    }
+
     grid = newGrid;
 }
 
@@ -264,6 +278,11 @@ std::vector<std::vector<double>> GridSimulation::runSimulation() {
         double avgR = sumR / grid.size();
         double timeVal = step * model.getDt();
         
+        // Ensure values are within valid bounds
+        avgS = std::max(0.0, std::min(1.0, avgS));
+        avgI = std::max(0.0, std::min(1.0, avgI));
+        avgR = std::max(0.0, std::min(1.0, avgR));
+
         results.push_back({timeVal, avgS, avgI, avgR});
         
         // Synchronize processes

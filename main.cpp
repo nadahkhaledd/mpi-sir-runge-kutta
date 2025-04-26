@@ -74,6 +74,15 @@ std::pair<int, int> calculateGridDimensions(int totalCells, int numBlocks) {
     return {rows, cols};
 }
 
+// Helper function to flatten a 2D vector into a 1D vector
+std::vector<double> flatten(const std::vector<std::vector<double>>& data) {
+    std::vector<double> flat;
+    for (const auto& row : data) {
+        flat.insert(flat.end(), row.begin(), row.end());
+    }
+    return flat;
+}
+
 int main(int argc, char *argv[]) {
 
     //const int blockSize=4;
@@ -147,9 +156,25 @@ int main(int argc, char *argv[]) {
     // Run the simulation
     std::vector<std::vector<double>> localResults = simulation.runSimulation();
 
-    // Gather and write results
-    std::vector<double> globalResults = mpi.gatherResults(localResults);
-    mpi.writeResults(globalResults, localResults.size());
+    // Gather and aggregate results
+    std::vector<double> globalFlatResults = mpi.gatherResults(localResults);
+
+    if (mpi.getRank() == 0) {
+        // Unflatten global results into a 2D vector
+        std::vector<std::vector<double>> globalResults;
+        int numColumns = 4; // [time, avg_S, avg_I, avg_R]
+        for (size_t i = 0; i < globalFlatResults.size(); i += numColumns) {
+            globalResults.push_back({
+                globalFlatResults[i], 
+                globalFlatResults[i + 1], 
+                globalFlatResults[i + 2], 
+                globalFlatResults[i + 3]
+            });
+        }
+
+        // Write results
+        mpi.writeResults(globalFlatResults, globalResults.size());
+    }
 
     return 0;
 }

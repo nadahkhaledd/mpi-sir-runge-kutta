@@ -139,20 +139,43 @@ std::vector<SIRCell> MPIHandler::distributeData(const std::vector<std::vector<do
 std::vector<double> MPIHandler::gatherResults(const std::vector<std::vector<double>>& localResults) {
     int steps = static_cast<int>(localResults.size());
     std::vector<double> localFlat;
-    
-    for (auto &row : localResults) {
+
+    // Flatten local results
+    for (const auto& row : localResults) {
         localFlat.insert(localFlat.end(), row.begin(), row.end());
     }
-    
+
+    // Prepare global buffer on rank 0
     std::vector<double> globalFlat;
     if (rank == 0) {
-        globalFlat.resize(steps * 4 * size);
+        globalFlat.resize(steps * 4 * size); // 4 columns: [time, S, I, R]
     }
-    
+
+    // Gather results from all processes
     MPI_Gather(localFlat.data(), steps * 4, MPI_DOUBLE,
                globalFlat.data(), steps * 4, MPI_DOUBLE,
                0, MPI_COMM_WORLD);
-    
+
+    // Normalize results on rank 0
+    if (rank == 0) {
+        for (size_t i = 0; i < globalFlat.size(); i += 4) {
+            double S = globalFlat[i + 1];
+            double I = globalFlat[i + 2];
+            double R = globalFlat[i + 3];
+            double sum = S + I + R;
+
+            if (sum > 0) {
+                globalFlat[i + 1] = std::max(0.0, std::min(1.0, S / sum));
+                globalFlat[i + 2] = std::max(0.0, std::min(1.0, I / sum));
+                globalFlat[i + 3] = std::max(0.0, std::min(1.0, R / sum));
+            } else {
+                globalFlat[i + 1] = 1.0;
+                globalFlat[i + 2] = 0.0;
+                globalFlat[i + 3] = 0.0;
+            }
+        }
+    }
+
     return globalFlat;
 }
 
