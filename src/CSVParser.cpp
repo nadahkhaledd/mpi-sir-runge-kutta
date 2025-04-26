@@ -64,7 +64,8 @@ std::vector<std::vector<double>> CSVParser::loadUSStateData(const std::string& f
         }
         
         try {
-            // Convert values to doubles
+            // Convert values to appropriate types
+            int population = std::stoi(tokens[1]); // Population as integer
             double lat = std::stod(tokens[3]);
             double lon = std::stod(tokens[4]);
             double confirmed = std::stod(tokens[5]);
@@ -72,8 +73,8 @@ std::vector<std::vector<double>> CSVParser::loadUSStateData(const std::string& f
             double recovered = std::stod(tokens[7]);
             double active = std::stod(tokens[8]);
             
-            // Store values
-            data.push_back({lat, lon, confirmed, deaths, recovered, active});
+            // Store values (convert population to double for consistency in the data structure)
+            data.push_back({static_cast<double>(population), lat, lon, confirmed, deaths, recovered, active});
         } catch (const std::invalid_argument& e) {
             std::cerr << "Invalid value at line " << lineCount << ": " << line << "\nError: " << e.what() << std::endl;
             continue;
@@ -85,22 +86,4 @@ std::vector<std::vector<double>> CSVParser::loadUSStateData(const std::string& f
     
     std::cout << "Successfully parsed " << data.size() << " data rows from CSV." << std::endl;
     return data;
-}
-
-SIRCell CSVParser::mapToSIR(const std::vector<double>& rowData) {
-    // rowData: [lat, lon, confirmed, deaths, recovered, active]
-    
-    // Calculate total population - if not available, estimate based on cases
-    double totalPopulation = std::max(1000.0, rowData[2] + 1000.0); // Confirmed cases plus buffer
-    
-    // Active cases (I)
-    double I = rowData[5] / totalPopulation; 
-    
-    // Recovered + deaths (R)
-    double R = (rowData[3] + rowData[4]) / totalPopulation;
-    
-    // Susceptible (S) - ensure it's not negative
-    double S = std::max(0.0, 1.0 - I - R);
-    
-    return SIRCell(S, I, R);
 }

@@ -45,8 +45,9 @@ with open(input_file, "r") as infile:
 # Filter rows to include only valid US states
 filtered_rows = [row for row in rows if row[0] in us_states]
 
-# Create a mapping of state to row
-state_to_row = {row[0]: row for row in filtered_rows}  # Assuming the first column is the state name
+# Adjust column indices to match the correct structure
+# Province_State, Population, Date, Lat, Long, Confirmed, Deaths, Recovered, Active
+state_to_row = {row[0]: row for row in filtered_rows}  # Province_State is the first column
 
 # Dynamically determine the number of blocks based on the dataset size
 num_rows = len(rows)

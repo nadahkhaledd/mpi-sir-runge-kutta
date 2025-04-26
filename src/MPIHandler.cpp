@@ -22,7 +22,8 @@ int MPIHandler::getSize() const {
     return size; 
 }
 
-std::vector<SIRCell> MPIHandler::distributeData(const std::vector<std::vector<double>>& fullData) {
+std::vector<SIRCell> MPIHandler::distributeData(const std::vector<std::vector<double>>& fullData,
+                                                const std::function<SIRCell(const std::vector<double>&)>& mapFunction) {
     std::vector<SIRCell> localGrid;
     
     // Debug: Print data size on each rank
@@ -62,7 +63,7 @@ std::vector<SIRCell> MPIHandler::distributeData(const std::vector<std::vector<do
     if (rank == 0) {
         // Process 0 handles its own portion
         for (int i = startIndex; i < startIndex + localRows && i < static_cast<int>(fullData.size()); i++) {
-            localGrid.push_back(CSVParser::mapToSIR(fullData[i]));
+            localGrid.push_back(mapFunction(fullData[i]));
         }
         
         // Debug: Confirm rank 0's own data assignment
@@ -75,7 +76,7 @@ std::vector<SIRCell> MPIHandler::distributeData(const std::vector<std::vector<do
             std::vector<double> sendBuffer;
             
             for (int i = procStart; i < procStart + procRows && i < static_cast<int>(fullData.size()); i++) {
-                SIRCell cell = CSVParser::mapToSIR(fullData[i]);
+                SIRCell cell = mapFunction(fullData[i]);
                 sendBuffer.push_back(cell.getS());
                 sendBuffer.push_back(cell.getI());
                 sendBuffer.push_back(cell.getR());

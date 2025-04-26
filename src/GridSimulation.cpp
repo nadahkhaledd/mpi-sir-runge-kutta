@@ -5,6 +5,7 @@
 #include <list>
 #include <fstream>
 #include <algorithm>
+#include <cmath>
 #include <sstream>
 #include <iostream>
 
@@ -63,7 +64,7 @@ void GridSimulation::updateGridNew() {
 
 std::map<std::string, int> GridSimulation::createCellsMap() {
     std::map<std::string, int> cells;
-    std::ifstream infile("../disease-simulation/data/sorted_initial_conditions.csv");
+    std::ifstream infile("data/sorted_initial_conditions.csv");
     if (!infile) {
         std::cerr << "Error: Could not open sorted_initial_conditions.csv\n";
         MPI_Abort(MPI_COMM_WORLD, 1);
@@ -112,9 +113,135 @@ std::map<int, std::list<int>> GridSimulation::divideIntoBlocks(
 
 std::map<int, std::list<int>> GridSimulation::divideIntoOptimalBlocks(
     const std::map<std::string, int>& cells, int numProcesses) {
-    // Dynamically determine the optimal number of blocks
-    int numBlocks = std::max(1, numProcesses * 2); // Example heuristic: 2 blocks per process
-    return divideIntoBlocks(cells, numBlocks);
+    int totalCells = static_cast<int>(cells.size());
+    
+    std::cout << "Finding optimal block distribution for " << totalCells << " cells...\n";
+    
+    // Find all divisors of totalCells
+    std::vector<int> divisors;
+    for (int i = 1; i <= totalCells / 2; ++i) {
+        if (totalCells % i == 0) {
+            divisors.push_back(i);
+        }
+    }
+    divisors.push_back(totalCells); // Add totalCells itself as a divisor
+    
+    // Define a target range for cells per block (not too few, not too many)
+    // For 50 cells, a good range might be 5-10 cells per block
+    const int minCellsPerBlock = 2;
+    const int maxCellsPerBlock = 10;
+    
+    // Find divisors that give us cells per block within our target range
+    std::vector<std::pair<int, int>> validConfigurations; // (blocks, cellsPerBlock)
+    for (int blocks : divisors) {
+        int cellsPerBlock = totalCells / blocks;
+        if (cellsPerBlock >= minCellsPerBlock && cellsPerBlock <= maxCellsPerBlock) {
+            validConfigurations.push_back({blocks, cellsPerBlock});
+        }
+    }
+    
+    // If no valid configurations found, relax constraints
+    if (validConfigurations.empty()) {
+        for (int blocks : divisors) {
+            int cellsPerBlock = totalCells / blocks;
+            validConfigurations.push_back({blocks, cellsPerBlock});
+        }
+    }
+    
+    // Score each valid configuration
+    int bestNumBlocks = 1;
+    double bestScore = -1.0;
+    
+    for (const auto& [blocks, cellsPerBlock] : validConfigurations) {
+        // Calculate how "square" the grid of blocks would be
+        int blockRows = static_cast<int>(std::sqrt(blocks));
+        while (blocks % blockRows != 0) {
+            blockRows--;
+        }
+        int blockCols = blocks / blockRows;
+        
+        // Calculate how "square" each block would be
+        int cellRows = static_cast<int>(std::sqrt(cellsPerBlock));
+        while (cellsPerBlock % cellRows != 0) {
+            cellRows--;
+        }
+        int cellCols = cellsPerBlock / cellRows;
+        
+        // Calculate final grid dimensions
+        int totalRows = blockRows * cellRows;
+        int totalCols = blockCols * cellCols;
+        
+        // Score based on:
+        // 1. How close the grid is to being square (ratio of 1.0 is perfect)
+        // 2. How close each block is to being square
+        // 3. Preference for more blocks (but not too many)
+        double gridRatio = static_cast<double>(totalRows) / totalCols;
+        if (gridRatio > 1.0) gridRatio = 1.0 / gridRatio; // Ensure ratio is <= 1.0
+        
+        double blockRatio = static_cast<double>(blockRows) / blockCols;
+        if (blockRatio > 1.0) blockRatio = 1.0 / blockRatio;
+        
+        double cellRatio = static_cast<double>(cellRows) / cellCols;
+        if (cellRatio > 1.0) cellRatio = 1.0 / cellRatio;
+        
+        // Combine factors into a single score
+        double score = gridRatio * 0.5 + blockRatio * 0.3 + cellRatio * 0.2;
+        
+        // Bonus for having more blocks (but not too many)
+        double blockBonus = 0.0;
+        if (blocks >= 2 && blocks <= 20) {
+            blockBonus = static_cast<double>(blocks) / 20.0; // Max bonus for 20 blocks
+        } else if (blocks > 20) {
+            blockBonus = 1.0; // Full bonus for > 20 blocks
+        }
+        
+        score += blockBonus * 0.2; // Add block bonus with 20% weight
+        
+        std::cout << "  Option: " << blocks << " blocks with " << cellsPerBlock 
+                  << " cells each. Grid: " << totalRows << "x" << totalCols
+                  << " Score: " << score << "\n";
+        
+        // Select the configuration with the highest score
+        if (score > bestScore) {
+            bestScore = score;
+            bestNumBlocks = blocks;
+        }
+    }
+    
+    int cellsPerBlock = totalCells / bestNumBlocks;
+    std::cout << "Optimal distribution: " << bestNumBlocks << " blocks with " 
+              << cellsPerBlock << " cells each.\n";
+    
+    // Divide cells into the best number of blocks
+    return divideIntoBlocks(cells, bestNumBlocks);
+}
+
+SIRCell GridSimulation::mapToSIR(const std::vector<double>& rowData) {
+    // Adjusted to match the correct column structure:
+    // Province_State, Population, Date, Lat, Long, Confirmed, Deaths, Recovered, Active
+    double population = rowData[1]; // Population
+    double confirmed = rowData[5]; // Confirmed cases
+    double deaths = rowData[6];    // Deaths
+    double recovered = rowData[7]; // Recovered
+    double active = rowData[8];    // Active cases
+
+    // Ensure population is valid
+    if (population <= 0) {
+        std::cerr << "Error: Invalid population value in input data.\n";
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+
+    // Calculate S, I, R based on the population
+    double S = (population - confirmed) / population;
+    double I = active / population;
+    double R = (recovered + deaths) / population;
+
+    // Ensure S, I, R are within valid bounds
+    if (S < 0) S = 0;
+    if (I < 0) I = 0;
+    if (R < 0) R = 0;
+
+    return SIRCell(S, I, R);
 }
 
 std::vector<std::vector<double>> GridSimulation::runSimulation() {

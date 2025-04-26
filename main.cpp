@@ -5,6 +5,7 @@
 #include "header/GridSimulation.h"
 #include <iostream>
 #include <unordered_map>
+#include <math.h>
 #include <map>
 #include <list>
 #include <vector>
@@ -30,10 +31,52 @@ std::unordered_map<int, std::vector<int>> build2DGridNeighborMap(int rows, int c
     return neighbors;
 }
 
+// Function to calculate grid dimensions and adjust total cells if necessary
+std::pair<int, int> calculateGridDimensions(int totalCells, int numBlocks) {
+    // Adjust totalCells to ensure it is divisible by the number of blocks
+    if (totalCells % numBlocks != 0) {
+        int extraCells = numBlocks - (totalCells % numBlocks);
+        totalCells += extraCells; // Add dummy cells only if necessary
+        std::cout << "Adjusted total cells to " << totalCells << " to ensure even distribution across blocks.\n";
+    } else {
+        std::cout << "Total cells (" << totalCells << ") is already evenly divisible by the number of blocks (" << numBlocks << ").\n";
+    }
+
+    // Calculate grid dimensions to create a rectangular grid with the optimal number of blocks
+    // Try to make the grid as square as possible while respecting the number of blocks
+    
+    // First, try to arrange blocks in a rectangular grid
+    int blockRows = static_cast<int>(std::sqrt(numBlocks));
+    while (numBlocks % blockRows != 0) {
+        blockRows--;
+    }
+    int blockCols = numBlocks / blockRows;
+    
+    // Calculate cells per block
+    int cellsPerBlock = totalCells / numBlocks;
+    
+    // Determine how to arrange cells within each block
+    // Try to make each block as square as possible
+    int cellsPerBlockRow = static_cast<int>(std::sqrt(cellsPerBlock));
+    while (cellsPerBlock % cellsPerBlockRow != 0) {
+        cellsPerBlockRow--;
+    }
+    int cellsPerBlockCol = cellsPerBlock / cellsPerBlockRow;
+    
+    // Calculate final grid dimensions
+    int rows = blockRows * cellsPerBlockRow;
+    int cols = blockCols * cellsPerBlockCol;
+    
+    std::cout << "Grid structure: " << blockRows << "x" << blockCols << " blocks, "
+              << "each with " << cellsPerBlockRow << "x" << cellsPerBlockCol << " cells\n";
+    std::cout << "Final grid dimensions: " << rows << "x" << cols << " (total cells: " << totalCells << ")\n";
+    
+    return {rows, cols};
+}
 
 int main(int argc, char *argv[]) {
 
-    const int blockSize=4;
+    //const int blockSize=4;
     // Initialize MPI
     MPIHandler mpi(argc, argv);
 
@@ -48,7 +91,7 @@ int main(int argc, char *argv[]) {
     // Load data (only process 0)
     std::vector<std::vector<double>> fullData;
     if (mpi.getRank() == 0) {
-        fullData = CSVParser::loadUSStateData("../disease-simulation/data/sorted_initial_conditions.csv");
+        fullData = CSVParser::loadUSStateData("./data/sorted_initial_conditions.csv");
         std::cout << "Total rows in input dataset: " << fullData.size() << "\n";
 
         // Create cells and dynamically divide into optimal blocks
@@ -65,17 +108,43 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // Distribute data among processes
-    std::vector<SIRCell> localGrid = mpi.distributeData(fullData);
-
     // Create and run simulation
     GridSimulation simulation(model, mpi.getRank(), mpi.getSize());
-    int rows = 8;
-    int cols = 8; // So total = 64
+
+    // Distribute data among processes
+    std::vector<SIRCell> localGrid = mpi.distributeData(fullData, [&simulation](const std::vector<double>& rowData) {
+        return simulation.mapToSIR(rowData);
+    });
+
+    // Ensure localGrid is not empty
+    if (localGrid.empty()) {
+        std::cerr << "Error: Process " << mpi.getRank() << " received no data.\n";
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+
+    // Dynamically determine the best number of blocks
+    auto cells = GridSimulation::createCellsMap();
+    auto blocks = GridSimulation::divideIntoOptimalBlocks(cells, mpi.getSize());
+
+    // Debug: Print blocks
+    for (const auto& [blockId, cellList] : blocks) {
+        std::cout << "Block " << blockId << ": ";
+        for (int cell : cellList) {
+            std::cout << cell << " ";
+        }
+        std::cout << "\n";
+    }
+
+    // Dynamically calculate grid dimensions
+    int totalCells = static_cast<int>(localGrid.size()) * mpi.getSize(); // Total cells across all processes
+    int numBlocks = static_cast<int>(blocks.size()); // Use the dynamically determined number of blocks
+    auto [rows, cols] = calculateGridDimensions(totalCells, numBlocks);
 
     auto neighborMap = build2DGridNeighborMap(rows, cols);
     simulation.setNeighborMap(neighborMap);
     simulation.setGrid(localGrid);
+
+    // Run the simulation
     std::vector<std::vector<double>> localResults = simulation.runSimulation();
 
     // Gather and write results

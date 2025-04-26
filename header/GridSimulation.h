@@ -17,7 +17,6 @@ private:
     int rank, size;
     std::unordered_map<int, std::vector<int>> neighborMap;
 
-    
 public:
     GridSimulation(const SIRModel& m, int mpiRank, int mpiSize);
     
@@ -30,6 +29,7 @@ public:
     void updateGrid();
     void updateGridNew();
     void setNeighborMap(const std::unordered_map<int, std::vector<int>>& map);
+    SIRCell mapToSIR(const std::vector<double>& rowData); // Map row data to SIRCell
 
     
     std::vector<std::vector<double>> runSimulation();
