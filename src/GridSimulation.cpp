@@ -63,7 +63,7 @@ void GridSimulation::updateGridNew() {
 
 std::map<std::string, int> GridSimulation::createCellsMap() {
     std::map<std::string, int> cells;
-    std::ifstream infile("data/sorted_initial_conditions.csv");
+    std::ifstream infile("../disease-simulation/data/sorted_initial_conditions.csv");
     if (!infile) {
         std::cerr << "Error: Could not open sorted_initial_conditions.csv\n";
         MPI_Abort(MPI_COMM_WORLD, 1);
