@@ -7,6 +7,31 @@
 #include <algorithm>
 #include <sstream>
 #include <iostream>
+#include <string>
+#include <array>
+#include <memory>
+
+std::string getCurrentDirectory() {
+    std::array<char, 128> buffer;
+    std::string result;
+    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen("pwd", "r"), pclose);
+
+    if (!pipe) {
+        throw std::runtime_error("popen() failed!");
+    }
+    
+    while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
+        result += buffer.data();
+    }
+
+    // Remove trailing newline if necessary
+    if (!result.empty() && result[result.length() - 1] == '\n') {
+        result.erase(result.length() - 1);
+    }
+
+    return result;
+}
+
 
 GridSimulation::GridSimulation(const SIRModel& m, int mpiRank, int mpiSize) 
     : model(m), rank(mpiRank), size(mpiSize) {}
@@ -61,9 +86,12 @@ void GridSimulation::updateGridNew() {
     grid = newGrid;
 }
 
+
 std::map<std::string, int> GridSimulation::createCellsMap() {
     std::map<std::string, int> cells;
-    std::ifstream infile("/home/nada/polimi/amsc/disease-simulation/data/sorted_initial_conditions.csv");
+    std::string currentDir = getCurrentDirectory();
+    std::string filePath = currentDir + "/data/sorted_initial_conditions.csv";
+    std::ifstream infile(filePath);
     if (!infile) {
         std::cerr << "Error: Could not open sorted_initial_conditions.csv\n";
         MPI_Abort(MPI_COMM_WORLD, 1);
