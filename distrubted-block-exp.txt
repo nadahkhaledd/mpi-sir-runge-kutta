@@ -1,0 +1,79 @@
+Initialization (All Ranks):
+MPI is initialized (MPIHandler constructor). The program starts running on multiple processes (we see Ranks 0, 1, 2, 3, so likely 4 processes).
+Basic variables are set up in main.
+Rank 0: Data Loading and Initial Setup:
+Skipping pre-header line: 50 9: Rank 0 opens sorted_initial_conditions.csv. The CSVParser::loadUSStateData function intelligently skips the first line because it doesn't look like the header.
+Found header at line 2...: It correctly identifies the header on the second line.
+Successfully parsed 50 data rows...: It reads the 50 lines after the header, storing them as vectors of doubles. The fullData variable on Rank 0 now holds this raw data (50 rows, likely 6 columns of numbers each).
+createCellsMap: Skipping... Found header... Created map with 50 entries.: The GridSimulation::createCellsMap function also correctly reads the same CSV, skips the pre-header and header, and creates a mapping (likely state_name -> cell_id). It assigns Cell IDs 0 through 49 to the 50 data rows.
+Block 0: 0 1 2 3 ... Block 12: 48 49: Rank 0 uses GridSimulation::divideIntoBlocks to split the 50 Cell IDs (0-49) into groups (blockSize = 4). Since 50 isn't perfectly divisible by 4, it creates 13 blocks (indexed 0 to 12). Blocks 0-11 contain 4 cells each, and Block 12 contains the remaining 2 cells (48 and 49).
+Block X neighbors: ...: Rank 0 calculates which blocks are adjacent to each other based on the cell connections (using buildBlockNeighborMap and assuming an 8x8 grid structure from build2DGridNeighborMap).
+Distributing Workload Structure (MPI Communication):
+Rank 0: Distributing structure of 13 blocks.: Rank 0 initiates the distribution of the block assignments using mpi.distributeBlocks. Crucially, it only sends the structure (which block ID contains which cell IDs), not the actual simulation data.
+Rank 0 determines how to split the 13 blocks among the 4 ranks (likely Rank 0 gets 4 blocks, Ranks 1, 2, 3 get 3 blocks each).
+Rank 0 sends messages to Ranks 1, 2, and 3 containing the block structures they are responsible for.
+Rank 1/2/3: Received termination signal for blocks.: Ranks 1, 2, and 3 finish receiving their assigned block structures from Rank 0.
+Rank X finished distributeBlocks (structure only) with Y local blocks.: Each rank now knows which blocks (and therefore which cell IDs) it owns (Rank 0: 4 blocks, Ranks 1, 2, 3: 3 blocks each).
+Distributing Necessary Data (MPI Communication):
+mpi.getDataForLocalBlocks is called by all ranks.
+Each rank (1, 2, 3) creates a list of the unique cell IDs it needs data for based on its localBlocks. They send these lists of requested IDs to Rank 0.
+Rank 0 receives the ID requests from all other ranks (and knows its own needed IDs).
+Rank 0: Total unique cell IDs requested across all ranks: 50: Rank 0 confirms that all 50 original data rows were requested by at least one rank.
+Rank 0: Determined doubles per cell = 6: Rank 0 looks at its fullData and sees each row has 6 numerical values. It will broadcast this information.
+Rank 0 goes through the requests, retrieves the corresponding data rows from its fullData, and sends only the requested rows back to the specific rank that asked for them using MPI_Scatterv.
+Rank X finished getDataForLocalBlocks. Found/received data for Y cells.: Each rank receives the specific data rows it requested. The number of cells (Y) matches the number of unique cell IDs in their assigned blocks (Rank 0: 16, Rank 1: 12, Rank 2: 12, Rank 3: 10).
+Broadcasting Shared Maps (MPI Communication):
+Rank 0: Broadcasting block neighbor map...: Rank 0 sends the complete blockNeighborMap (which block touches which other block) to all other ranks using mpi.broadcastBlockNeighborMap.
+Rank X successfully received block neighbor map...: Ranks 1, 2, 3 receive this map.
+Rank 0 builds the blockToRankMap (which rank owns which block).
+Rank 0 broadcasts the blockToRankMap to all other ranks (currently using a manual Bcast in main).
+Rank X set block-to-rank map...: All ranks now have both the block adjacency and block ownership maps.
+Local Simulation Setup (All Ranks):
+Each rank creates its SIRModel and GridSimulation objects.
+Rank X set cell neighbor map...: Each rank creates the full 8x8 cell neighbor map locally (this is identical on all ranks) and gives it to its simulation object.
+Rank X set grid from local data...: Key Step: Each rank calls simulation.setGridFromLocalData, providing its localBlocks structure and the localCellData (the subset of data it received). The GridSimulation object creates its internal grid (vector of SIRCell objects) and the globalToLocalCellIndex map using only this local data. The grid size matches the number of cells received (16, 12, 12, 10).
+Rank X set block info...: Each rank tells its simulation object about its localBlocks and the broadcasted blockNeighborMap. This also verifies/rebuilds the globalToLocalCellIndex map based on the final grid.
+Parallel Simulation Loop (All Ranks):
+Rank X starting simulation loop for 100 steps.: All ranks enter the simulation.runSimulation() loop.
+Inside the loop (repeated 100 times):
+Boundary Identification: Each rank figures out which of its cells border cells owned by other ranks, using cellNeighborMap, blockNeighborMap, and blockToRankMap.
+MPI Communication: Ranks exchange SIR state data (S, I, R values) for these boundary/ghost cells with their appropriate neighbors using non-blocking sends/receives (MPI_Isend/MPI_Irecv, MPI_Waitall).
+Local Computation: Each rank updates the state of its own cells using model.rk4StepWithNeighbors, taking into account the states of its real local neighbors and the ghost cell data received from other ranks.
+Result Recording: Each rank calculates the average S, I, R across its local cells for this timestep and stores it.
+Synchronization: All ranks wait at an MPI_Barrier before proceeding to the next step, ensuring no rank gets too far ahead.
+Rank X finished simulation loop.: All ranks complete 100 steps.
+Result Aggregation and Output (MPI Communication & Rank 0):
+mpi.gatherResults is called. Each rank sends its list of 100 local average results (100 steps * 4 doubles = 400 doubles) to Rank 0.
+Rank 0: Gathering total 1600 doubles...: Rank 0 receives the data from all 4 ranks (4 * 400 = 1600 doubles) and assembles it into globalResults.
+mpi.writeResults is called. Rank 0 opens simulation_results.csv and writes the header. It then parses the globalResults buffer, correctly attributing each segment of 400 doubles to the originating rank, and writes out the time series data for each rank.
+Rank 0: Results written...: The file is saved.
+Finalization (All Ranks):
+MPI is finalized (MPIHandler destructor).
+The program exits.
+
+
+
+
+
+Okay, here's a summary of the key features of your parallel disease simulation program based on the workflow described in the output:
+Core Functionality:
+Parallel SIR Simulation: Simulates the Susceptible-Infected-Recovered (SIR) disease model over a spatial grid using multiple processes via MPI.
+Domain Decomposition: Divides the spatial grid (represented by Cell IDs) into smaller "Blocks" to distribute the computational workload across MPI ranks.
+Initialization & Setup (Primarily Rank 0):
+Centralized Data Loading: Only Rank 0 reads the initial condition data from the CSV file, avoiding redundant file I/O on all processes.
+Robust CSV Parsing: Handles potential non-data lines (like pre-headers) before finding the actual header and parsing the data rows.
+Cell & Block Mapping: Creates mappings from unique identifiers (like state names) to Cell IDs, and then divides these Cell IDs into logical Blocks based on a defined size.
+Neighbor Calculation: Determines adjacency relationships both at the fine-grained cell level (cellNeighborMap) and the coarser block level (blockNeighborMap).
+Ownership Mapping: Figures out which MPI rank is responsible for simulating which Block (blockToRankMap).
+Data & Work Distribution (MPI Communication):
+Efficient Data Distribution: Instead of broadcasting the entire initial dataset, only the necessary subset of initial condition data required by each rank for its assigned blocks is sent (getDataForLocalBlocks). This significantly reduces communication overhead.
+Structure Distribution: Sends only the lightweight block structure (Block ID -> list of Cell IDs) to each rank (distributeBlocks).
+Shared Topology Broadcast: Key structural information like the blockNeighborMap and blockToRankMap are broadcast from Rank 0 to all other ranks, ensuring everyone knows the simulation layout and ownership.
+Parallel Simulation Execution (All Ranks):
+Local Grid Management: Each rank manages its own GridSimulation object, containing only the SIRCell states for the cells within its assigned blocks.
+Boundary/Ghost Cell Exchange: At each simulation timestep, ranks communicate the SIR state data only for cells that lie on the boundary between blocks assigned to different ranks. This ensures interactions across process boundaries are correctly calculated.
+Parallel Computation: Each rank independently computes the time evolution of the SIR model for its local cells using an RK4 numerical method, incorporating data from local neighbors and received ghost cell data.
+Synchronization: Uses MPI_Barrier to synchronize processes at the end of each timestep, maintaining consistency.
+Results & Output:
+Result Aggregation: Gathers the time series of average SIR values calculated locally by each rank onto Rank 0 (gatherResults).
+Formatted Output: Rank 0 writes the combined results from all ranks into a single, structured CSV file, clearly identifying the results per rank (writeResults).
