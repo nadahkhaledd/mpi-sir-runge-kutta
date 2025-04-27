@@ -29,7 +29,6 @@ public:
     void updateGrid();
     void updateGridNew();
     void setNeighborMap(const std::unordered_map<int, std::vector<int>>& map);
-    static SIRCell mapToSIR(const std::vector<double>& rowData); // Map row data to SIRCell
 
     void initialize(const std::vector<SIRCell>& localGrid, int numProcesses);
     static std::unordered_map<int, std::vector<int>> build2DGridNeighborMap(int rows, int cols);

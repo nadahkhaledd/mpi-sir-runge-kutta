@@ -87,3 +87,31 @@ std::vector<std::vector<double>> CSVParser::loadUSStateData(const std::string& f
     std::cout << "Successfully parsed " << data.size() << " data rows from CSV." << std::endl;
     return data;
 }
+
+SIRCell CSVParser::mapToSIR(const std::vector<double>& rowData) {
+    // Adjusted to match the correct column structure:
+    // Province_State, Population, Date, Lat, Long, Confirmed, Deaths, Recovered, Active
+    double population = rowData[0]; // Population
+    double confirmed = rowData[3]; // Confirmed cases
+    double deaths = rowData[4];    // Deaths
+    double recovered = rowData[5]; // Recovered
+    double active = rowData[6];    // Active cases
+
+    // Ensure population is valid
+    if (population <= 0) {
+        std::cerr << "Error: Invalid population value in input data.\n";
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+
+    // Calculate S, I, R based on the population
+    double S = (population - confirmed) / population;
+    double I = active / population;
+    double R = (recovered + deaths) / population;
+
+    // Ensure S, I, R are within valid bounds
+    if (S < 0) S = 0;
+    if (I < 0) I = 0;
+    if (R < 0) R = 0;
+
+    return SIRCell(S, I, R);
+}

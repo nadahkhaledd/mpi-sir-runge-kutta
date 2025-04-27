@@ -27,7 +27,7 @@ int main(int argc, char *argv[]) {
     }
 
     std::vector<SIRCell> localGrid = mpi.distributeData(fullData, [](const std::vector<double>& rowData) {
-        return GridSimulation::mapToSIR(rowData); // Call static method
+        return CSVParser::mapToSIR(rowData); // Call static method from CSVParser
     });
 
     // Create and configure simulation

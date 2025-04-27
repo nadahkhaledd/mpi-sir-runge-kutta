@@ -227,34 +227,6 @@ std::map<int, std::list<int>> GridSimulation::divideIntoOptimalBlocks(
     return divideIntoBlocks(cells, bestNumBlocks);
 }
 
-SIRCell GridSimulation::mapToSIR(const std::vector<double>& rowData) {
-    // Adjusted to match the correct column structure:
-    // Province_State, Population, Date, Lat, Long, Confirmed, Deaths, Recovered, Active
-    double population = rowData[1]; // Population
-    double confirmed = rowData[5]; // Confirmed cases
-    double deaths = rowData[6];    // Deaths
-    double recovered = rowData[7]; // Recovered
-    double active = rowData[8];    // Active cases
-
-    // Ensure population is valid
-    if (population <= 0) {
-        std::cerr << "Error: Invalid population value in input data.\n";
-        MPI_Abort(MPI_COMM_WORLD, 1);
-    }
-
-    // Calculate S, I, R based on the population
-    double S = (population - confirmed) / population;
-    double I = active / population;
-    double R = (recovered + deaths) / population;
-
-    // Ensure S, I, R are within valid bounds
-    if (S < 0) S = 0;
-    if (I < 0) I = 0;
-    if (R < 0) R = 0;
-
-    return SIRCell(S, I, R);
-}
-
 std::vector<std::vector<double>> GridSimulation::runSimulation() {
     std::vector<std::vector<double>> results; // [time, avg_S, avg_I, avg_R]
     

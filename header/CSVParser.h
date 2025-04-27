@@ -13,6 +13,9 @@ private:
 public:
     // Parse CSV data
     static std::vector<std::vector<double>> loadUSStateData(const std::string& filename);
+
+    // Map row data to SIRCell
+    static SIRCell mapToSIR(const std::vector<double>& rowData);
 };
 
 #endif // CSVPARSER_H
