@@ -40,7 +40,7 @@ def load_simulation_data(filename):
     """
     try:
         df = pd.read_csv(filename)
-        # Ensure data is grouped by time step if 'Process' column exists
+        # Ensure data is grouped by time step if the 'Process' column exists
         if 'Process' in df.columns:
             df = df.groupby("Time", as_index=False).mean()  # Aggregate by averaging
 

@@ -24,11 +24,8 @@ int GridSimulation::getLocalSize() const {
     return grid.size();
 }
 
-
 void GridSimulation::setNeighborMap(const std::unordered_map<int, std::vector<int>>& map) {
-
     neighborMap = map;
-
 }
 
 void GridSimulation::updateGrid() {
@@ -290,4 +287,61 @@ std::vector<std::vector<double>> GridSimulation::runSimulation() {
     }
     
     return results;
+}
+
+void GridSimulation::initialize(const std::vector<SIRCell>& localGrid, int numProcesses) {
+    setGrid(localGrid);
+
+    auto cells = createCellsMap();
+    auto blocks = divideIntoOptimalBlocks(cells, numProcesses);
+
+    int totalCells = static_cast<int>(localGrid.size()) * numProcesses;
+    int numBlocks = static_cast<int>(blocks.size());
+    auto [rows, cols] = calculateGridDimensions(totalCells, numBlocks);
+
+    auto neighborMap = build2DGridNeighborMap(rows, cols);
+    setNeighborMap(neighborMap);
+}
+
+std::unordered_map<int, std::vector<int>> GridSimulation::build2DGridNeighborMap(int rows, int cols) {
+    std::unordered_map<int, std::vector<int>> neighbors;
+    for (int i = 0; i < rows * cols; ++i) {
+        int row = i / cols;
+        int col = i % cols;
+
+        std::vector<int> gridNeighbors;
+
+        if (row > 0) gridNeighbors.push_back((row - 1) * cols + col);     // up
+        if (row < rows - 1) gridNeighbors.push_back((row + 1) * cols + col); // down
+        if (col > 0) gridNeighbors.push_back(i - 1);                       // left
+        if (col < cols - 1) gridNeighbors.push_back(i + 1);               // right
+
+        neighbors[i] = gridNeighbors;
+    }
+    return neighbors;
+}
+
+std::pair<int, int> GridSimulation::calculateGridDimensions(int totalCells, int numBlocks) {
+    if (totalCells % numBlocks != 0) {
+        int extraCells = numBlocks - (totalCells % numBlocks);
+        totalCells += extraCells;
+    }
+
+    int blockRows = static_cast<int>(std::sqrt(numBlocks));
+    while (numBlocks % blockRows != 0) {
+        blockRows--;
+    }
+    int blockCols = numBlocks / blockRows;
+
+    int cellsPerBlock = totalCells / numBlocks;
+    int cellsPerBlockRow = static_cast<int>(std::sqrt(cellsPerBlock));
+    while (cellsPerBlock % cellsPerBlockRow != 0) {
+        cellsPerBlockRow--;
+    }
+    int cellsPerBlockCol = cellsPerBlock / cellsPerBlockRow;
+
+    int rows = blockRows * cellsPerBlockRow;
+    int cols = blockCols * cellsPerBlockCol;
+
+    return {rows, cols};
 }

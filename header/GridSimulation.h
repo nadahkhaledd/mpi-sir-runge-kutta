@@ -29,8 +29,11 @@ public:
     void updateGrid();
     void updateGridNew();
     void setNeighborMap(const std::unordered_map<int, std::vector<int>>& map);
-    SIRCell mapToSIR(const std::vector<double>& rowData); // Map row data to SIRCell
+    static SIRCell mapToSIR(const std::vector<double>& rowData); // Map row data to SIRCell
 
+    void initialize(const std::vector<SIRCell>& localGrid, int numProcesses);
+    static std::unordered_map<int, std::vector<int>> build2DGridNeighborMap(int rows, int cols);
+    static std::pair<int, int> calculateGridDimensions(int totalCells, int numBlocks);
     
     std::vector<std::vector<double>> runSimulation();
 
