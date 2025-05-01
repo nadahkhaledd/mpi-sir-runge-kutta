@@ -38,10 +38,15 @@ public:
     void setBlockToRankMap(const std::unordered_map<int, int>& map);
 
     // --- Simulation Logic ---
+    void exchangeGhostCells();
     // Original update (no neighbors) - Keep or remove depending on need
     void updateGrid();
     // Update with neighbors (used internally by runSimulation, relies on MPI data)
     void updateGridNew(); // This name might be confusing now, consider renaming or removing if unused externally
+    
+    void setNeighborMap(const std::unordered_map<int, std::vector<int>>& map);
+    void setGhostNeighborMap(const std::unordered_map<int, std::vector<int>>& map);
+    
     // Main MPI simulation loop performing communication and updates
     std::vector<std::vector<double>> runSimulation();
 
@@ -73,6 +78,11 @@ private:
     std::unordered_map<int, std::vector<int>> cellNeighborMap;
     // Maps global block IDs to the MPI rank that owns them (full map)
     std::unordered_map<int, int> blockToRankMap;
+    std::unordered_map<int, std::vector<int>> ghostNeighborMap;
+    std::unordered_map<int, int> cellIdToLocalIndex; // global cell ID -> local index
+    std::unordered_map<int, std::vector<int>> neighborMap; // local neighbor map if different from cellNeighborMap
+
+
 
 }; // End of class GridSimulation definition
 
