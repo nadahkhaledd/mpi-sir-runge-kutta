@@ -152,126 +152,80 @@ std::vector<SIRCell> MPIHandler::distributeData(const std::vector<std::vector<do
 
 
 // gatherResults: Gather [time, avgS, avgI, avgR] from each process
-std::vector<double> MPIHandler::gatherResults(const std::vector<std::vector<double>>& localResults) {
-     // Assuming each inner vector is [time, S, I, R] -> 4 doubles
-     int doublesPerStep = 4;
-     int localSteps = localResults.size();
-     int localDataSize = localSteps * doublesPerStep;
+std::vector<double> MPIHandler::gatherResults(const std::vector<std::vector<double>>& localResults,
+                                              std::vector<int>& outCounts,
+                                              std::vector<int>& outDispls) {
+    int doublesPerStep = 4;
+    int localSteps = localResults.size();
+    int localDataSize = localSteps * doublesPerStep;
 
-     // Flatten local results
-     std::vector<double> localFlat;
-     localFlat.reserve(localDataSize);
-     for (const auto& stepData : localResults) {
-         if (stepData.size() == static_cast<size_t>(doublesPerStep)) {
+    std::vector<double> localFlat;
+    localFlat.reserve(localDataSize);
+    for (const auto& stepData : localResults) {
+        if (stepData.size() == static_cast<size_t>(doublesPerStep)) {
             localFlat.insert(localFlat.end(), stepData.begin(), stepData.end());
-         } else {
-             std::cerr << "Rank " << rank << " Warning: Unexpected size for step data in gatherResults. Expected "
-                       << doublesPerStep << ", got " << stepData.size() << ". Padding with zeros." << std::endl;
-             // Pad with zeros or handle error appropriately
-             localFlat.insert(localFlat.end(), doublesPerStep, 0.0); // Pad
-         }
-     }
-      // Adjust size if padding occurred
-     localDataSize = localFlat.size();
+        } else {
+            std::cerr << "Rank " << rank << " Warning: Invalid step data size. Padding." << std::endl;
+            localFlat.insert(localFlat.end(), doublesPerStep, 0.0);
+        }
+    }
+    localDataSize = localFlat.size();
 
+    std::vector<int> recvCounts(size);
+    std::vector<int> displacements(size);
+    MPI_Gather(&localDataSize, 1, MPI_INT, recvCounts.data(), 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-     // Prepare for gatherV
-     std::vector<int> recvCounts(size); // How many doubles each rank sends
-     std::vector<int> displacements(size); // Displacement for each rank's data in global buffer
+    std::vector<double> globalFlat;
+    if (rank == 0) {
+        displacements[0] = 0;
+        for (int i = 1; i < size; ++i)
+            displacements[i] = displacements[i - 1] + recvCounts[i - 1];
+        globalFlat.resize(displacements[size - 1] + recvCounts[size - 1]);
+    }
 
-     // Gather the size of data each process will send
-     MPI_Gather(&localDataSize, 1, MPI_INT, recvCounts.data(), 1, MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Gatherv(localFlat.data(), localDataSize, MPI_DOUBLE,
+                globalFlat.data(), recvCounts.data(), displacements.data(), MPI_DOUBLE,
+                0, MPI_COMM_WORLD);
 
-     // Rank 0 calculates displacements and total size
-     std::vector<double> globalFlat;
-     int totalDoubles = 0;
-     if (rank == 0) {
-         displacements[0] = 0;
-         totalDoubles = recvCounts[0];
-         for (int i = 1; i < size; ++i) {
-             displacements[i] = displacements[i - 1] + recvCounts[i - 1];
-             totalDoubles += recvCounts[i];
-         }
-         globalFlat.resize(totalDoubles);
-         std::cout << "Rank 0: Gathering total " << totalDoubles << " doubles for results." << std::endl;
-     }
-
-     // Perform the gather operation using Gatherv
-     MPI_Gatherv(localFlat.data(), localDataSize, MPI_DOUBLE,
-                 globalFlat.data(), recvCounts.data(), displacements.data(), MPI_DOUBLE,
-                 0, MPI_COMM_WORLD);
-
-     // Only rank 0 will have the full vector populated correctly
-     return globalFlat;
+    outCounts = recvCounts;
+    outDispls = displacements;
+    return globalFlat;
 }
 
+// Modified writeResults: now receives correct counts/displacements
+void MPIHandler::writeResults(const std::vector<double>& globalFlat,
+                              const std::vector<int>& recvCounts,
+                              const std::vector<int>& displacements) {
+    if (rank == 0) {
+        std::ofstream outfile("./data/simulation_results.csv");
+        if (!outfile) {
+            std::cerr << "Rank 0: Cannot open simulation_results.csv" << std::endl;
+            return;
+        }
 
-// writeResults: Rank 0 writes the gathered results
-void MPIHandler::writeResults(const std::vector<double>& globalFlat, int /*steps_hint*/) {
-     // steps_hint might not be reliable if ranks have different amounts of data.
-     // We derive steps per rank from the gathered data sizes.
-     if (rank == 0) {
-         std::string filename = "simulation_results.csv";
-         std::ofstream outfile(filename);
-         if (!outfile) {
-             std::cerr << "Error: Could not open file " << filename << " for writing results." << std::endl;
-             return;
-         }
-
-         outfile << "Rank,Time,S_avg,I_avg,R_avg\n"; // Header
-
-         // Re-calculate recvCounts and displacements to parse globalFlat
-         std::vector<int> recvCounts(size);
-         std::vector<int> displacements(size);
-         // All ranks need to participate in this Gather, even if they send 0 size
-         int dummyLocalSize = 0; // Not used, just need participation
-         MPI_Gather(&dummyLocalSize, 1, MPI_INT, recvCounts.data(), 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-         // Rank 0 calculates displacements again
-         displacements[0] = 0;
-         for (int i = 1; i < size; ++i) {
-             displacements[i] = displacements[i - 1] + recvCounts[i - 1];
-         }
-
-         int doublesPerStep = 4; // Assuming [Time, S, I, R]
-         for (int proc = 0; proc < size; ++proc) {
-             int startIdx = displacements[proc];
-             int numDoubles = recvCounts[proc];
-
-             // Check if data size is valid
-             if (numDoubles < 0 || numDoubles % doublesPerStep != 0) {
-                 std::cerr << "Rank 0 Warning: Invalid received data size " << numDoubles << " for rank " << proc
-                           << ". Skipping writing results for this rank." << std::endl;
-                 continue; // Skip writing data for this rank
-             }
-
-             int numStepsForProc = numDoubles / doublesPerStep;
-
-             for (int i = 0; i < numStepsForProc; ++i) {
-                 int currentIdx = startIdx + i * doublesPerStep;
-                 // Basic bounds check on globalFlat before accessing
-                 if (currentIdx + doublesPerStep - 1 < static_cast<int>(globalFlat.size())) {
-                     outfile << proc << ",";                   // Rank
-                     outfile << globalFlat[currentIdx + 0] << ","; // Time
-                     outfile << globalFlat[currentIdx + 1] << ","; // S_avg
-                     outfile << globalFlat[currentIdx + 2] << ","; // I_avg
-                     outfile << globalFlat[currentIdx + 3] << "\n"; // R_avg
-                 } else {
-                      std::cerr << "Rank 0 Error: Calculated index " << currentIdx << " out of bounds for globalFlat (size " << globalFlat.size() << "). Stopping write for rank " << proc << "." << std::endl;
-                      break; // Stop writing for this rank if out of bounds
-                 }
-             }
-         }
-
-         outfile.close();
-         std::cout << "Rank 0: Results written to " << filename << std::endl;
-     } else {
-         // Other ranks participate in the Gather for sizes
-         int dummyLocalSize = 0; // Size doesn't matter here
-         MPI_Gather(&dummyLocalSize, 1, MPI_INT, nullptr, 0, MPI_INT, 0, MPI_COMM_WORLD);
-     }
+        outfile << "Rank,Time,S_avg,I_avg,R_avg\n";
+        int doublesPerStep = 4;
+        for (int proc = 0; proc < size; ++proc) {
+            int startIdx = displacements[proc];
+            int numDoubles = recvCounts[proc];
+            if (numDoubles % doublesPerStep != 0) {
+                std::cerr << "Rank 0 Warning: Misaligned data size from rank " << proc << std::endl;
+                continue;
+            }
+            int numSteps = numDoubles / doublesPerStep;
+            for (int i = 0; i < numSteps; ++i) {
+                int idx = startIdx + i * doublesPerStep;
+                outfile << proc << ","
+                        << globalFlat[idx + 0] << ","
+                        << globalFlat[idx + 1] << ","
+                        << globalFlat[idx + 2] << ","
+                        << globalFlat[idx + 3] << "\n";
+            }
+        }
+        outfile.close();
+        std::cout << "Rank 0: Results written to simulation_results.csv" << std::endl;
+    }
 }
-
 
 // distributeBlocks: Distributes ONLY block structure (IDs)
 std::map<int, std::list<int>> MPIHandler::distributeBlocks(

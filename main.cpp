@@ -1,47 +1,52 @@
 #include <mpi.h>
 #include "header/MPIHandler.h"
 #include "header/SIRModel.h"
-#include "header/CSVParser.h" // Keep for Rank 0 loading
+#include "header/CSVParser.h"
 #include "header/GridSimulation.h"
 #include <iostream>
 #include <map>
 #include <list>
 #include <vector>
 #include <string>
-#include <unordered_map> // Keep for neighbor maps
-#include <unordered_set> // Needed for buildBlockNeighborMap
+#include <unordered_map>
+#include <unordered_set>
+#include <cmath>
 
-// --- Restored Function Implementations ---
-
-// Builds neighbor map for a simple 2D grid ( toroidal or not depending on logic )
 std::unordered_map<int, std::vector<int>> build2DGridNeighborMap(
     int rows, int cols,
-    const std::unordered_map<int, int>& cellToBlock,
-    std::unordered_map<int, std::vector<int>>& ghostNeighbors
-) {
+    const std::unordered_map<int, int> &cellToBlock,
+    std::unordered_map<int, std::vector<int>> &ghostNeighbors)
+{
     std::unordered_map<int, std::vector<int>> neighbors;
 
     int totalCells = rows * cols;
-    for (int i = 0; i < totalCells; ++i) {
-        if (cellToBlock.find(i) == cellToBlock.end()) continue;
+    for (int i = 0; i < totalCells; ++i)
+    {
+        if (cellToBlock.find(i) == cellToBlock.end())
+            continue;
 
         int row = i / cols;
         int col = i % cols;
 
         std::vector<int> neighborList;
         std::vector<int> directions = {
-            (row > 0)        ? (i - cols) : -1,
+            (row > 0) ? (i - cols) : -1,
             (row < rows - 1) ? (i + cols) : -1,
-            (col > 0)        ? (i - 1)    : -1,
-            (col < cols - 1) ? (i + 1)    : -1
-        };
+            (col > 0) ? (i - 1) : -1,
+            (col < cols - 1) ? (i + 1) : -1};
 
-        for (int neighborId : directions) {
-            if (neighborId != -1 && cellToBlock.find(neighborId) != cellToBlock.end()) {
-                if (cellToBlock.at(i) == cellToBlock.at(neighborId)) {
-                    neighborList.push_back(neighborId);
-                } else {
-                    ghostNeighbors[i].push_back(neighborId);
+        for (int neighborId : directions)
+        {
+            if (neighborId != -1 && cellToBlock.find(neighborId) != cellToBlock.end())
+            {
+                if (cellToBlock.at(i) == cellToBlock.at(neighborId))
+                {
+                    neighborList.push_back(neighborId); // local
+                }
+                else
+                {
+                    ghostNeighbors[i].push_back(neighborId); // ghost
+                    neighborList.push_back(neighborId);      // <-- ALSO keep it in the main list
                 }
             }
         }
@@ -49,22 +54,22 @@ std::unordered_map<int, std::vector<int>> build2DGridNeighborMap(
         neighbors[i] = neighborList;
     }
 
+    std::cerr << "DEBUG: Finished build2DGridNeighborMap. Size = " << neighbors.size() << std::endl;
     return neighbors;
 }
 
-// Builds a map of adjacent blocks based on cell adjacency
 std::unordered_map<int, std::vector<int>> buildBlockNeighborMap(
-    const std::map<int, std::list<int>> &allBlocks, // Needs blocks map
+    const std::map<int, std::list<int>> &allBlocks,
     const std::unordered_map<int, std::vector<int>> &cellNeighborMap)
-{ // Needs cell neighbor map
+{
 
     std::unordered_map<int, std::vector<int>> blockNeighborMap;
     if (allBlocks.empty() || cellNeighborMap.empty())
     {
-        return blockNeighborMap; // Return empty if input is empty
+        std::cerr << "DEBUG: Empty input to buildBlockNeighborMap." << std::endl;
+        return blockNeighborMap;
     }
 
-    // Efficiently map cell ID -> block ID
     std::unordered_map<int, int> cellToBlockMap;
     for (const auto &[blockId, cellList] : allBlocks)
     {
@@ -74,24 +79,20 @@ std::unordered_map<int, std::vector<int>> buildBlockNeighborMap(
         }
     }
 
-    // Determine block neighbors
     for (const auto &[blockId, cellList] : allBlocks)
     {
-        std::unordered_set<int> neighborBlockIdsSet; // Use set to automatically handle duplicates
+        std::unordered_set<int> neighborBlockIdsSet;
         for (int cellId : cellList)
         {
-            // Check neighbors of this cell
             auto it_neighbors = cellNeighborMap.find(cellId);
             if (it_neighbors != cellNeighborMap.end())
             {
                 for (int neighborCellId : it_neighbors->second)
                 {
-                    // Find which block the neighbor cell belongs to
                     auto it_block = cellToBlockMap.find(neighborCellId);
                     if (it_block != cellToBlockMap.end())
                     {
                         int neighborBlockId = it_block->second;
-                        // Add if it's a different block
                         if (neighborBlockId != blockId)
                         {
                             neighborBlockIdsSet.insert(neighborBlockId);
@@ -100,28 +101,28 @@ std::unordered_map<int, std::vector<int>> buildBlockNeighborMap(
                 }
             }
         }
-        // Convert set to vector for the final map
-        if (!neighborBlockIdsSet.empty())
-        {
-            blockNeighborMap[blockId] = std::vector<int>(neighborBlockIdsSet.begin(), neighborBlockIdsSet.end());
-        }
+        blockNeighborMap[blockId] = std::vector<int>(neighborBlockIdsSet.begin(), neighborBlockIdsSet.end());
+        std::cerr << "DEBUG: Block " << blockId << " has " << blockNeighborMap[blockId].size() << " neighbors." << std::endl;
     }
-    return blockNeighborMap; // Make sure to return the map
-}
 
-// --- End Restored Functions ---
+    std::cerr << "DEBUG: Finished buildBlockNeighborMap. Size = " << blockNeighborMap.size() << std::endl;
+    return blockNeighborMap;
+}
 
 int main(int argc, char *argv[])
 {
     const int blockSize = 4;
     MPIHandler mpi(argc, argv);
 
-    // --- Rank 0 Loads Initial Data and Structures ---
     std::vector<std::vector<double>> fullData;
     std::map<int, std::list<int>> allBlocks;
     std::map<std::string, int> cells;
     std::unordered_map<int, std::vector<int>> blockNeighborMap;
     std::unordered_map<int, int> cellToBlock;
+
+    int rows = 0, cols = 0;
+    std::unordered_map<int, std::vector<int>> cellNeighborMap;
+    std::unordered_map<int, std::vector<int>> ghostNeighborMap;
 
     if (mpi.getRank() == 0)
     {
@@ -144,7 +145,6 @@ int main(int argc, char *argv[])
             }
         }
 
-        // Debug print blocks
         for (const auto &[blockId, cellList] : allBlocks)
         {
             std::cout << "Block " << blockId << ": ";
@@ -155,28 +155,25 @@ int main(int argc, char *argv[])
             std::cout << "\n";
         }
 
-        int rows = 8;
-        int cols = 8; // Grid dimensions for neighbor calculation
-        // Use the restored function with arguments
-        std::unordered_map<int, std::vector<int>> ghostNeighborMapUnused;
+        int totalCells = fullData.size();
+        cols = std::ceil(std::sqrt(totalCells));
+        rows = (totalCells + cols - 1) / cols;
+        std::cout << "Adjusted grid: rows = " << rows << ", cols = " << cols << "\n";
 
-        auto cellNeighborMapForBlocks = build2DGridNeighborMap(rows, cols, cellToBlock, ghostNeighborMapUnused);
+        cellNeighborMap = build2DGridNeighborMap(rows, cols, cellToBlock, ghostNeighborMap);
 
-        if (!ghostNeighborMapUnused.empty()) {
-            std::cout << "Rank " << mpi.getRank() << " Ghost Neighbors:\n";
-            for (const auto& [cellId, ghosts] : ghostNeighborMapUnused) {
-                std::cout << "  Cell " << cellId << " has ghost neighbors: ";
-                for (int ghost : ghosts) std::cout << ghost << " ";
-                std::cout << "\n";
-            }
-        } else {
-            std::cout << "Rank " << mpi.getRank() << " No ghost neighbors found.\n";
+        std::cout << "Rank " << mpi.getRank() << " Ghost Neighbors (if any):\n";
+        for (const auto &[cellId, ghosts] : ghostNeighborMap)
+        {
+            std::cout << "  Cell " << cellId << " has ghost neighbors: ";
+            for (int ghost : ghosts)
+                std::cout << ghost << " ";
+            std::cout << "\n";
         }
-        
-        // Use the restored function with arguments
-        blockNeighborMap = buildBlockNeighborMap(allBlocks, cellNeighborMapForBlocks);
 
-        // Debug print block neighbors
+        blockNeighborMap = buildBlockNeighborMap(allBlocks, cellNeighborMap);
+        std::cout << "DEBUG: blockNeighborMap size = " << blockNeighborMap.size() << "\n";
+
         for (const auto &[blockId, neighborBlocks] : blockNeighborMap)
         {
             std::cout << "Block " << blockId << " neighbors: ";
@@ -188,33 +185,24 @@ int main(int argc, char *argv[])
         }
     }
 
-    // --- Distribute Block Structure and Necessary Data ---
     std::map<int, std::list<int>> localBlocks = mpi.distributeBlocks(allBlocks);
     std::map<int, std::vector<double>> localCellData = mpi.getDataForLocalBlocks(localBlocks, fullData);
     blockNeighborMap = mpi.broadcastBlockNeighborMap(blockNeighborMap);
 
-    // --- Setup Simulation ---
     SIRModel model(0.3, 0.1, 0.2, 100);
     GridSimulation simulation(model, mpi.getRank(), mpi.getSize());
-
-    int rows = 8;
-    int cols = 8; // Ensure consistency
-    std::unordered_map<int, std::vector<int>> ghostNeighborMap;
-    auto cellNeighborMap = build2DGridNeighborMap(rows, cols, cellToBlock, ghostNeighborMap);
 
     simulation.setCellNeighborMap(cellNeighborMap);
     simulation.setGhostNeighborMap(ghostNeighborMap);
 
-    // Create and broadcast blockToRankMap
     std::unordered_map<int, int> blockToRankMap;
     if (mpi.getRank() == 0)
     {
-        int totalBlocks = allBlocks.size(); // Use size determined by rank 0
+        int totalBlocks = allBlocks.size();
         int blockCounter = 0;
         for (const auto &[blockId, _] : allBlocks)
-        { // Iterate in consistent order if needed
+        {
             int targetRank = -1;
-            // Recalculate distribution logic to find owner rank for each block
             int tempBlocksPerProc = totalBlocks / mpi.getSize();
             int tempExtraBlocks = totalBlocks % mpi.getSize();
             for (int r = 0; r < mpi.getSize(); ++r)
@@ -233,38 +221,45 @@ int main(int argc, char *argv[])
             }
             else
             {
-                std::cerr << "Rank 0 Error: Could not determine owner rank for block " << blockId << " (index " << blockCounter << ")" << std::endl;
+                std::cerr << "Rank 0 Error: Could not determine owner rank for block " << blockId << "\n";
             }
             blockCounter++;
         }
     }
 
-
     int map_size = (mpi.getRank() == 0) ? blockToRankMap.size() : 0;
     MPI_Bcast(&map_size, 1, MPI_INT, 0, MPI_COMM_WORLD);
     std::vector<int> map_data(map_size * 2);
-    if (mpi.getRank() == 0) {
+    if (mpi.getRank() == 0)
+    {
         int i = 0;
-        for (const auto& pair : blockToRankMap) {
+        for (const auto &pair : blockToRankMap)
+        {
             map_data[i++] = pair.first;
             map_data[i++] = pair.second;
         }
     }
     MPI_Bcast(map_data.data(), map_size * 2, MPI_INT, 0, MPI_COMM_WORLD);
-    if (mpi.getRank() != 0) {
-        for (int i = 0; i < map_size * 2; i += 2) {
+    if (mpi.getRank() != 0)
+    {
+        for (int i = 0; i < map_size * 2; i += 2)
+        {
             blockToRankMap[map_data[i]] = map_data[i + 1];
         }
     }
     simulation.setBlockToRankMap(blockToRankMap);
-
     simulation.setGridFromLocalData(localBlocks, localCellData);
     simulation.setBlockInfo(localBlocks, blockNeighborMap);
 
+
     std::vector<std::vector<double>> localResults = simulation.runSimulation();
-    std::vector<double> globalResults = mpi.gatherResults(localResults);
-    int numLocalSteps = localResults.size();
-    mpi.writeResults(globalResults, numLocalSteps);
+    std::vector<int> recvCounts;      // To hold the number of doubles each rank contributes
+    std::vector<int> displacements;   // To hold the offset into the gathered buffer per rank
+
+    std::vector<double> globalResults = mpi.gatherResults(localResults, recvCounts, displacements);
+
+    mpi.writeResults(globalResults, recvCounts, displacements);
+
 
     return 0;
 }
