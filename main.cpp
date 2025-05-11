@@ -135,7 +135,7 @@ int main(int argc, char *argv[])
         }
 
         cells = GridSimulation::createCellsMap();
-        allBlocks = GridSimulation::divideIntoBlocks(cells, blockSize);
+        allBlocks = GridSimulation::divideIntoOptimalBlocks(cells, mpi.getSize());
 
         for (const auto &[blockId, cellList] : allBlocks)
         {
@@ -191,6 +191,8 @@ int main(int argc, char *argv[])
 
     SIRModel model(0.3, 0.1, 0.2, 100);
     GridSimulation simulation(model, mpi.getRank(), mpi.getSize());
+    //simulation.initialize(localBlocks, mpi.getSize());
+
 
     simulation.setCellNeighborMap(cellNeighborMap);
     simulation.setGhostNeighborMap(ghostNeighborMap);

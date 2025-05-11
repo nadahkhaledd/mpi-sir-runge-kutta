@@ -16,6 +16,10 @@ public:
     // Constructor
     GridSimulation(const SIRModel& m, int mpiRank, int mpiSize);
 
+    void initialize(const std::vector<SIRCell>& localGrid, int numProcesses);
+    static std::unordered_map<int, std::vector<int>> build2DGridNeighborMap(int rows, int cols);
+    static std::pair<int, int> calculateGridDimensions(int totalCells, int numBlocks);
+
     // --- Getters and Basic Setters ---
     std::vector<SIRCell>& getGrid(); // Get modifiable reference to the local grid
     int getLocalSize() const;        // Get number of cells on this process
@@ -53,9 +57,10 @@ public:
     // --- Static Helper Methods ---
     // Creates a map from state names (or identifiers) to cell IDs from a file
     static std::map<std::string, int> createCellsMap();
-    // Divides cells into blocks based on sorted IDs and block size
     static std::map<int, std::list<int>> divideIntoBlocks(
         const std::map<std::string, int>& cells, int blockSize);
+    static std::map<int, std::list<int>> divideIntoOptimalBlocks(
+        const std::map<std::string, int>& cells, int numProcesses);
 
 
 private:
