@@ -130,6 +130,17 @@ std::map<int, std::list<int>> GridSimulation::divideIntoOptimalBlocks(
 
     std::cout << "Finding optimal block distribution for " << totalCells << " cells...\n";
 
+    // Handle edge case: fewer cells than processes
+    if (totalCells <= numProcesses) {
+        std::map<int, std::list<int>> blocks;
+        int blockId = 0;
+        for (const auto& [state, cellId] : cells) {
+            blocks[blockId++].push_back(cellId);
+            if (blockId >= numProcesses) blockId = 0; // Wrap around
+        }
+        return blocks;
+    }
+
     // Find all divisors of totalCells
     std::vector<int> divisors;
     for (int i = 1; i <= totalCells / 2; ++i) {
@@ -140,9 +151,8 @@ std::map<int, std::list<int>> GridSimulation::divideIntoOptimalBlocks(
     divisors.push_back(totalCells); // Add totalCells itself as a divisor
 
     // Define a target range for cells per block (not too few, not too many)
-    // For 50 cells, a good range might be 5-10 cells per block
-    const int minCellsPerBlock = 2;
-    const int maxCellsPerBlock = 10;
+    const int minCellsPerBlock = std::max(1, totalCells / (numProcesses * 2)); // At least half the average
+    const int maxCellsPerBlock = std::max(1, totalCells / numProcesses);       // At most the average
 
     // Find divisors that give us cells per block within our target range
     std::vector<std::pair<int, int>> validConfigurations; // (blocks, cellsPerBlock)
