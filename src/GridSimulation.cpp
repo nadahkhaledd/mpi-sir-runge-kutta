@@ -143,39 +143,19 @@ std::map<int, std::list<int>> GridSimulation::divideIntoOptimalBlocks(
 
     // Find all divisors of totalCells
     std::vector<int> divisors;
-    for (int i = 1; i <= totalCells / 2; ++i) {
+    for (int i = 1; i <= totalCells; ++i) {
         if (totalCells % i == 0) {
             divisors.push_back(i);
         }
     }
-    divisors.push_back(totalCells); // Add totalCells itself as a divisor
 
-    // Define a target range for cells per block (not too few, not too many)
-    const int minCellsPerBlock = std::max(1, totalCells / (numProcesses * 2)); // At least half the average
-    const int maxCellsPerBlock = std::max(1, totalCells / numProcesses);       // At most the average
-
-    // Find divisors that give us cells per block within our target range
-    std::vector<std::pair<int, int>> validConfigurations; // (blocks, cellsPerBlock)
-    for (int blocks : divisors) {
-        int cellsPerBlock = totalCells / blocks;
-        if (cellsPerBlock >= minCellsPerBlock && cellsPerBlock <= maxCellsPerBlock) {
-            validConfigurations.push_back({blocks, cellsPerBlock});
-        }
-    }
-
-    // If no valid configurations found, relax constraints
-    if (validConfigurations.empty()) {
-        for (int blocks : divisors) {
-            int cellsPerBlock = totalCells / blocks;
-            validConfigurations.push_back({blocks, cellsPerBlock});
-        }
-    }
-
-    // Score each valid configuration
+    // Score each configuration
     int bestNumBlocks = 1;
     double bestScore = -1.0;
 
-    for (const auto& [blocks, cellsPerBlock] : validConfigurations) {
+    for (int blocks : divisors) {
+        int cellsPerBlock = totalCells / blocks;
+
         // Calculate how "square" the grid of blocks would be
         int blockRows = static_cast<int>(std::sqrt(blocks));
         while (blocks % blockRows != 0) {
@@ -196,29 +176,29 @@ std::map<int, std::list<int>> GridSimulation::divideIntoOptimalBlocks(
 
         // Score based on:
         // 1. How close the grid is to being square (ratio of 1.0 is perfect)
-        // 2. How close each block is to being square
-        // 3. Preference for more blocks (but not too many)
         double gridRatio = static_cast<double>(totalRows) / totalCols;
         if (gridRatio > 1.0) gridRatio = 1.0 / gridRatio; // Ensure ratio is <= 1.0
 
+        // 2. How close each block is to being square
         double blockRatio = static_cast<double>(blockRows) / blockCols;
         if (blockRatio > 1.0) blockRatio = 1.0 / blockRatio;
 
+        // 3. How close each cell block is to being square
         double cellRatio = static_cast<double>(cellRows) / cellCols;
         if (cellRatio > 1.0) cellRatio = 1.0 / cellRatio;
 
-        // Combine factors into a single score
-        double score = gridRatio * 0.5 + blockRatio * 0.3 + cellRatio * 0.2;
+        // 4. Balance between blocks and cells per block
+        double balanceFactor = static_cast<double>(blocks) / cellsPerBlock;
+        if (balanceFactor > 1.0) balanceFactor = 1.0 / balanceFactor;
 
-        // Bonus for having more blocks (but not too many)
-        double blockBonus = 0.0;
-        if (blocks >= 2 && blocks <= 20) {
-            blockBonus = static_cast<double>(blocks) / 20.0; // Max bonus for 20 blocks
-        } else if (blocks > 20) {
-            blockBonus = 1.0; // Full bonus for > 20 blocks
+        // 5. Penalize extreme configurations
+        double penalty = 0.0;
+        if (blocks < numProcesses || cellsPerBlock < 5) {
+            penalty = 0.3; // Apply a penalty for too few blocks or too few cells per block
         }
 
-        score += blockBonus * 0.2; // Add block bonus with 20% weight
+        // Combine factors into a single score
+        double score = gridRatio * 0.25 + blockRatio * 0.25 + cellRatio * 0.2 + balanceFactor * 0.2 - penalty;
 
         std::cout << "  Option: " << blocks << " blocks with " << cellsPerBlock
                   << " cells each. Grid: " << totalRows << "x" << totalCols
