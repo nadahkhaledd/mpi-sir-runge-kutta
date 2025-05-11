@@ -111,7 +111,7 @@ std::unordered_map<int, std::vector<int>> buildBlockNeighborMap(
 
 int main(int argc, char *argv[])
 {
-    const int blockSize = 4;
+    //const int blockSize = 4;
     MPIHandler mpi(argc, argv);
 
     std::vector<std::vector<double>> fullData;

@@ -425,6 +425,10 @@ void GridSimulation::initialize(const std::vector<SIRCell>& localGrid, int numPr
     setNeighborMap(neighborMap);
 }
 
+void GridSimulation::setNeighborMap(const std::unordered_map<int, std::vector<int>>& map) {
+    neighborMap = map;
+}
+
 std::unordered_map<int, std::vector<int>> GridSimulation::build2DGridNeighborMap(int rows, int cols) {
     std::unordered_map<int, std::vector<int>> neighbors;
     for (int i = 0; i < rows * cols; ++i) {
