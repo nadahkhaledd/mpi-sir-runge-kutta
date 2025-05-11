@@ -102,6 +102,67 @@ The rank of each process is accessed using the `MPIHandler::getRank` method, and
 
 ---
 
+### 5️⃣ Scoring Logic for Dividing Data
+
+The `GridSimulation::divideIntoOptimalBlocks` method evaluates multiple configurations for dividing the grid into blocks and selects the best one based on a scoring system. Here's how the scoring works:
+
+#### **1. Configurations Evaluated**
+- The method considers all divisors of the total number of cells as potential numbers of blocks.
+- For each divisor (number of blocks), it calculates the number of cells per block.
+
+#### **2. Factors Considered in Scoring**
+Each configuration is scored based on the following factors:
+
+1. **Grid Shape**:
+   - The overall grid of blocks is evaluated for how "square" it is.
+   - A grid with a ratio close to 1.0 (e.g., 5x5) is preferred over a long, narrow grid (e.g., 1x25).
+
+2. **Block Shape**:
+   - Each block is evaluated for how "square" it is.
+   - A block with a ratio close to 1.0 (e.g., 5x5) is preferred over a long, narrow block (e.g., 1x25).
+
+3. **Cell Block Shape**:
+   - The shape of the cells within each block is evaluated for how "square" it is.
+   - A block with cells arranged in a square-like shape is preferred.
+
+4. **Balance Factor**:
+   - The balance between the number of blocks and the size of each block is evaluated.
+   - Configurations with a reasonable balance (e.g., 10 blocks with 5 cells each) are preferred over extremes (e.g., 1 block with 50 cells or 50 blocks with 1 cell each).
+
+5. **Penalties for Extreme Configurations**:
+   - Configurations with too few blocks or too few cells per block are penalized.
+   - For example, configurations with fewer blocks than the number of processes or fewer than 5 cells per block are penalized.
+
+#### **3. Scoring Formula**
+The score for each configuration is calculated as:
+```
+score = (gridRatio * 0.25) + (blockRatio * 0.25) + (cellRatio * 0.2) + (balanceFactor * 0.2) - penalty
+```
+Where:
+- `gridRatio`: How square the overall grid of blocks is.
+- `blockRatio`: How square each block is.
+- `cellRatio`: How square the cells within each block are.
+- `balanceFactor`: The balance between the number of blocks and the size of each block.
+- `penalty`: A penalty applied for extreme configurations.
+
+#### **4. Example Output**
+For 50 cells and 4 processes, the method might produce the following output:
+```
+Finding optimal block distribution for 50 cells...
+  Option: 1 blocks with 50 cells each. Grid: 5x10 Score: 0.45
+  Option: 2 blocks with 25 cells each. Grid: 5x10 Score: 0.62
+  Option: 5 blocks with 10 cells each. Grid: 2x25 Score: 0.68
+  Option: 10 blocks with 5 cells each. Grid: 2x25 Score: 0.72
+  Option: 25 blocks with 2 cells each. Grid: 5x10 Score: 0.55
+  Option: 50 blocks with 1 cells each. Grid: 5x10 Score: 0.48
+Optimal distribution: 10 blocks with 5 cells each.
+```
+
+#### **5. Selected Configuration**
+The configuration with the highest score is selected as the optimal distribution. In this example, the configuration with 10 blocks and 5 cells per block is chosen.
+
+---
+
 ## 🛠️ Building the Project
 
 ### Steps to Compile:
