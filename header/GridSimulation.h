@@ -10,13 +10,13 @@
 #include <string>
 #include "SIRCell.h"  // Ensure this path is correct and SIRCell is defined
 #include "SIRModel.h" // Ensure this path is correct and SIRModel is defined
+#include "MPIHandler.h" // Include MPIHandler for setupSimulation
 
 class GridSimulation {
 public:
     // Constructor
     GridSimulation(const SIRModel& m, int mpiRank, int mpiSize);
 
-    void initialize(const std::vector<SIRCell>& localGrid, int numProcesses);
     static std::unordered_map<int, std::vector<int>> build2DGridNeighborMap(int rows, int cols);
     static std::pair<int, int> calculateGridDimensions(int totalCells, int numBlocks);
 
@@ -62,6 +62,22 @@ public:
     static std::map<int, std::list<int>> divideIntoOptimalBlocks(
         const std::map<std::string, int>& cells, int numProcesses);
 
+    static std::unordered_map<int, std::vector<int>> build2DGridNeighborMap(
+        int rows, int cols,
+        const std::unordered_map<int, int>& cellToBlock,
+        std::unordered_map<int, std::vector<int>>& ghostNeighbors);
+
+    static std::unordered_map<int, std::vector<int>> buildBlockNeighborMap(
+        const std::map<int, std::list<int>>& allBlocks,
+        const std::unordered_map<int, std::vector<int>>& cellNeighborMap);
+
+    void setupSimulation(
+        MPIHandler& mpi,
+        const std::vector<std::vector<double>>& fullData,
+        std::map<int, std::list<int>>& allBlocks,
+        std::unordered_map<int, std::vector<int>>& cellNeighborMap,
+        std::unordered_map<int, std::vector<int>>& ghostNeighborMap,
+        std::unordered_map<int, std::vector<int>>& blockNeighborMap);
 
 private:
     // --- Core Simulation Components ---

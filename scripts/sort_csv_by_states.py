@@ -33,8 +33,8 @@ us_states = [
 ]
 
 # Load the CSV file
-input_file = "data/initial_conditions.csv"
-output_file = "data/sorted_initial_conditions.csv"
+input_file = "./data/initial_conditions.csv"
+output_file = "./data/sorted_initial_conditions.csv"
 
 # Read the CSV file
 with open(input_file, "r") as infile:

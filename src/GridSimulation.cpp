@@ -421,40 +421,116 @@ std::vector<std::vector<double>> GridSimulation::runSimulation() {
     return localResults; // Make sure return is here
 }
 
-void GridSimulation::initialize(const std::vector<SIRCell>& localGrid, int numProcesses) {
-    setGrid(localGrid);
-
-    auto cells = createCellsMap();
-    auto blocks = divideIntoOptimalBlocks(cells, numProcesses);
-
-    int totalCells = static_cast<int>(localGrid.size()) * numProcesses;
-    int numBlocks = static_cast<int>(blocks.size());
-    auto [rows, cols] = calculateGridDimensions(totalCells, numBlocks);
-
-    auto neighborMap = build2DGridNeighborMap(rows, cols);
-    setNeighborMap(neighborMap);
-}
-
 void GridSimulation::setNeighborMap(const std::unordered_map<int, std::vector<int>>& map) {
     neighborMap = map;
 }
 
-std::unordered_map<int, std::vector<int>> GridSimulation::build2DGridNeighborMap(int rows, int cols) {
+std::unordered_map<int, std::vector<int>> GridSimulation::build2DGridNeighborMap(
+    int rows, int cols,
+    const std::unordered_map<int, int>& cellToBlock,
+    std::unordered_map<int, std::vector<int>>& ghostNeighbors) {
     std::unordered_map<int, std::vector<int>> neighbors;
-    for (int i = 0; i < rows * cols; ++i) {
+    int totalCells = rows * cols;
+
+    for (int i = 0; i < totalCells; ++i) {
+        if (cellToBlock.find(i) == cellToBlock.end()) continue;
+
         int row = i / cols;
         int col = i % cols;
 
-        std::vector<int> gridNeighbors;
+        std::vector<int> neighborList;
+        std::vector<int> directions = {
+            (row > 0) ? (i - cols) : -1,
+            (row < rows - 1) ? (i + cols) : -1,
+            (col > 0) ? (i - 1) : -1,
+            (col < cols - 1) ? (i + 1) : -1};
 
-        if (row > 0) gridNeighbors.push_back((row - 1) * cols + col);     // up
-        if (row < rows - 1) gridNeighbors.push_back((row + 1) * cols + col); // down
-        if (col > 0) gridNeighbors.push_back(i - 1);                       // left
-        if (col < cols - 1) gridNeighbors.push_back(i + 1);               // right
+        for (int neighborId : directions) {
+            if (neighborId != -1 && cellToBlock.find(neighborId) != cellToBlock.end()) {
+                if (cellToBlock.at(i) == cellToBlock.at(neighborId)) {
+                    neighborList.push_back(neighborId); // local
+                } else {
+                    ghostNeighbors[i].push_back(neighborId); // ghost
+                    neighborList.push_back(neighborId);      // also keep in main list
+                }
+            }
+        }
 
-        neighbors[i] = gridNeighbors;
+        neighbors[i] = neighborList;
     }
+
     return neighbors;
+}
+
+std::unordered_map<int, std::vector<int>> GridSimulation::buildBlockNeighborMap(
+    const std::map<int, std::list<int>>& allBlocks,
+    const std::unordered_map<int, std::vector<int>>& cellNeighborMap) {
+    std::unordered_map<int, std::vector<int>> blockNeighborMap;
+    if (allBlocks.empty() || cellNeighborMap.empty()) return blockNeighborMap;
+
+    std::unordered_map<int, int> cellToBlockMap;
+    for (const auto& [blockId, cellList] : allBlocks) {
+        for (int cellId : cellList) {
+            cellToBlockMap[cellId] = blockId;
+        }
+    }
+
+    for (const auto& [blockId, cellList] : allBlocks) {
+        std::unordered_set<int> neighborBlockIdsSet;
+        for (int cellId : cellList) {
+            auto it_neighbors = cellNeighborMap.find(cellId);
+            if (it_neighbors != cellNeighborMap.end()) {
+                for (int neighborCellId : it_neighbors->second) {
+                    auto it_block = cellToBlockMap.find(neighborCellId);
+                    if (it_block != cellToBlockMap.end()) {
+                        int neighborBlockId = it_block->second;
+                        if (neighborBlockId != blockId) {
+                            neighborBlockIdsSet.insert(neighborBlockId);
+                        }
+                    }
+                }
+            }
+        }
+        blockNeighborMap[blockId] = std::vector<int>(neighborBlockIdsSet.begin(), neighborBlockIdsSet.end());
+    }
+
+    return blockNeighborMap;
+}
+
+void GridSimulation::setupSimulation(
+    MPIHandler& mpi,
+    const std::vector<std::vector<double>>& fullData,
+    std::map<int, std::list<int>>& allBlocks,
+    std::unordered_map<int, std::vector<int>>& cellNeighborMap,
+    std::unordered_map<int, std::vector<int>>& ghostNeighborMap,
+    std::unordered_map<int, std::vector<int>>& blockNeighborMap) {
+    if (mpi.getRank() == 0) {
+        auto cells = createCellsMap();
+        allBlocks = divideIntoOptimalBlocks(cells, mpi.getSize());
+
+        std::unordered_map<int, int> cellToBlock;
+        for (const auto& [blockId, cellList] : allBlocks) {
+            for (int cell : cellList) {
+                cellToBlock[cell] = blockId;
+            }
+        }
+
+        int totalCells = fullData.size();
+        int cols = std::ceil(std::sqrt(totalCells));
+        int rows = (totalCells + cols - 1) / cols;
+
+        cellNeighborMap = build2DGridNeighborMap(rows, cols, cellToBlock, ghostNeighborMap);
+        blockNeighborMap = buildBlockNeighborMap(allBlocks, cellNeighborMap);
+    }
+
+    allBlocks = mpi.distributeBlocks(allBlocks);
+    auto localCellData = mpi.getDataForLocalBlocks(allBlocks, fullData);
+    blockNeighborMap = mpi.broadcastBlockNeighborMap(blockNeighborMap);
+
+    setGridFromLocalData(allBlocks, localCellData);
+    setBlockInfo(allBlocks, blockNeighborMap);
+    setCellNeighborMap(cellNeighborMap);
+    setGhostNeighborMap(ghostNeighborMap);
 }
 
 std::pair<int, int> GridSimulation::calculateGridDimensions(int totalCells, int numBlocks) {
