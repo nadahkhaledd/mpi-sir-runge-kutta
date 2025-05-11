@@ -4,7 +4,6 @@
 #include <vector>
 #include <map>
 #include <list>
-#include <string>
 #include <unordered_map>
 
 class SIRCell;
@@ -20,16 +19,12 @@ public:
     int getSize() const;
 
     // --- MPI Communication / Data Handling Methods ---
-    std::vector<SIRCell> distributeData(const std::vector<std::vector<double>>& fullData);
-
-    // Updated gatherResults: now also outputs recvCounts and displacements
     std::vector<double> gatherResults(
         const std::vector<std::vector<double>>& localResults,
         std::vector<int>& recvCounts,
         std::vector<int>& displacements
     );
 
-    // Updated writeResults: takes recvCounts and displacements
     void writeResults(
         const std::vector<double>& globalFlat,
         const std::vector<int>& recvCounts,

@@ -14,6 +14,7 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
+#include <cmath>
 #include <numeric>
 #include <stdexcept>
 #include <array>
@@ -58,20 +59,23 @@ void GridSimulation::setGrid(const std::vector<SIRCell>& initialGrid) {
 }
 
 std::map<std::string, int> GridSimulation::createCellsMap() {
+    std::cout << "Rank " << rank << ": Starting to create cells map from CSV file.\n";
     std::map<std::string, int> cells;
     std::string filePath;
     try {
         std::string currentDir = getCurrentDirectory();
         filePath = currentDir + "/data/sorted_initial_conditions.csv";
     } catch (const std::runtime_error& e) {
-        std::cerr << "Error getting current directory: " << e.what() << ". Cannot create cells map." << std::endl;
+        std::cerr << "Rank " << rank << ": Error getting current directory: " << e.what() << ". Cannot create cells map.\n";
         return {};
     }
     std::ifstream infile(filePath);
     if (!infile) {
-        std::cerr << "Error: Could not open file for createCellsMap: " << filePath << "\n";
+        std::cerr << "Rank " << rank << ": Error: Could not open file for createCellsMap: " << filePath << "\n";
         return {};
     }
+    std::cout << "Rank " << rank << ": Successfully opened file for createCellsMap: " << filePath << "\n";
+
     std::string line;
     int cellId = 0;
     bool headerFound = false;
@@ -93,22 +97,129 @@ std::map<std::string, int> GridSimulation::createCellsMap() {
         }
     }
     infile.close();
+    std::cout << "Rank " << rank << ": Created cells map with " << cells.size() << " entries.\n";
     return cells;
 }
 
 std::map<int, std::list<int>> GridSimulation::divideIntoBlocks(
-    const std::map<std::string, int>& cells, int blockSize) {
+    const std::map<std::string, int>& cells, int numBlocks) {
     std::map<int, std::list<int>> blocks;
-    if (blockSize <= 0 || cells.empty()) return blocks;
+
+    // Extract and sort cell IDs
     std::vector<int> sortedCellIds;
-    for (const auto& pair : cells) sortedCellIds.push_back(pair.second);
-    std::sort(sortedCellIds.begin(), sortedCellIds.end());
-    int blockId = 0;
-    for (size_t i = 0; i < sortedCellIds.size(); ++i) {
-        blocks[blockId].push_back(sortedCellIds[i]);
-        if ((i + 1) % static_cast<size_t>(blockSize) == 0 && (i + 1) < sortedCellIds.size()) ++blockId;
+    for (const auto& [state, cellId] : cells) {
+        sortedCellIds.push_back(cellId);
     }
+    std::sort(sortedCellIds.begin(), sortedCellIds.end());
+
+    // Calculate block size dynamically
+    int blockSize = sortedCellIds.size() / numBlocks;
+    int extra = sortedCellIds.size() % numBlocks;
+
+    // Assign sorted cell IDs to blocks
+    int startIndex = 0;
+    for (int blockId = 0; blockId < numBlocks; ++blockId) {
+        int currentBlockSize = blockSize + (blockId < extra ? 1 : 0); // Distribute remainder evenly
+        for (int i = 0; i < currentBlockSize; ++i) {
+            blocks[blockId].push_back(sortedCellIds[startIndex++]);
+        }
+    }
+
     return blocks;
+}
+
+std::map<int, std::list<int>> GridSimulation::divideIntoOptimalBlocks(
+    const std::map<std::string, int>& cells, int numProcesses) {
+    int totalCells = static_cast<int>(cells.size());
+    std::cout << "Rank " << rank << ": Finding optimal block distribution for " << totalCells << " cells...\n";
+
+    // Handle edge case: fewer cells than processes
+    if (totalCells <= numProcesses) {
+        std::map<int, std::list<int>> blocks;
+        int blockId = 0;
+        for (const auto& [state, cellId] : cells) {
+            blocks[blockId++].push_back(cellId);
+            if (blockId >= numProcesses) blockId = 0; // Wrap around
+        }
+        return blocks;
+    }
+
+    // Find all divisors of totalCells
+    std::vector<int> divisors;
+    for (int i = 1; i <= totalCells; ++i) {
+        if (totalCells % i == 0) {
+            divisors.push_back(i);
+        }
+    }
+
+    // Score each configuration
+    int bestNumBlocks = 1;
+    double bestScore = -1.0;
+
+    for (int blocks : divisors) {
+        int cellsPerBlock = totalCells / blocks;
+
+        // Calculate how "square" the grid of blocks would be
+        int blockRows = static_cast<int>(std::sqrt(blocks));
+        while (blocks % blockRows != 0) {
+            blockRows--;
+        }
+        int blockCols = blocks / blockRows;
+
+        // Calculate how "square" each block would be
+        int cellRows = static_cast<int>(std::sqrt(cellsPerBlock));
+        while (cellsPerBlock % cellRows != 0) {
+            cellRows--;
+        }
+        int cellCols = cellsPerBlock / cellRows;
+
+        // Calculate final grid dimensions
+        int totalRows = blockRows * cellRows;
+        int totalCols = blockCols * cellCols;
+
+        // Score based on:
+        // 1. How close the grid is to being square (ratio of 1.0 is perfect)
+        double gridRatio = static_cast<double>(totalRows) / totalCols;
+        if (gridRatio > 1.0) gridRatio = 1.0 / gridRatio; // Ensure ratio is <= 1.0
+
+        // 2. How close each block is to being square
+        double blockRatio = static_cast<double>(blockRows) / blockCols;
+        if (blockRatio > 1.0) blockRatio = 1.0 / blockRatio;
+
+        // 3. How close each cell block is to being square
+        double cellRatio = static_cast<double>(cellRows) / cellCols;
+        if (cellRatio > 1.0) cellRatio = 1.0 / cellRatio;
+
+        // 4. Balance between blocks and cells per block
+        double balanceFactor = static_cast<double>(blocks) / cellsPerBlock;
+        if (balanceFactor > 1.0) balanceFactor = 1.0 / balanceFactor;
+
+        // 5. Penalize extreme configurations
+        double penalty = 0.0;
+        if (blocks < numProcesses || cellsPerBlock < 5) {
+            penalty = 0.3; // Apply a penalty for too few blocks or too few cells per block
+        }
+
+        // Combine factors into a single score
+        double score = gridRatio * 0.25 + blockRatio * 0.25 + cellRatio * 0.2 + balanceFactor * 0.2 - penalty;
+
+        std::cout << "  Option: " << blocks << " blocks with " << cellsPerBlock
+                  << " cells each. Grid: " << totalRows << "x" << totalCols
+                  << " Score: " << score << "\n";
+
+        // Select the configuration with the highest score
+        if (score > bestScore) {
+            bestScore = score;
+            bestNumBlocks = blocks;
+        }
+    }
+
+    int cellsPerBlock = totalCells / bestNumBlocks;
+    std::cout << "Rank " << rank << ": Optimal distribution: " << bestNumBlocks << " blocks with "
+              << cellsPerBlock << " cells each.\n";
+
+    // Divide cells into the best number of blocks
+    return divideIntoBlocks(cells, bestNumBlocks);
 }
 
 void GridSimulation::setGridFromLocalData(
@@ -203,6 +314,21 @@ void GridSimulation::updateGridNew() {
         }
         newGrid[i] = model.rk4StepWithNeighbors(grid[i], neighbors);
     }
+
+    // Normalize the grid to ensure S + I + R = 1 for each cell
+    for (auto& cell : newGrid) {
+        double sum = cell.getS() + cell.getI() + cell.getR();
+        if (sum > 0) {
+            cell.setS(cell.getS() / sum);
+            cell.setI(cell.getI() / sum);
+            cell.setR(cell.getR() / sum);
+        } else {
+            cell.setS(1.0);
+            cell.setI(0.0);
+            cell.setR(0.0);
+        }
+    }
+
     grid = std::move(newGrid);
 }
 
@@ -276,4 +402,154 @@ std::vector<std::vector<double>> GridSimulation::runSimulation() {
     }
     std::cout << "Rank " << rank << " finished simulation loop." << std::endl;
     return localResults; // Make sure return is here
+}
+
+void GridSimulation::setNeighborMap(const std::unordered_map<int, std::vector<int>>& map) {
+    neighborMap = map;
+}
+
+std::unordered_map<int, std::vector<int>> GridSimulation::build2DGridNeighborMap(
+    int rows, int cols,
+    const std::unordered_map<int, int>& cellToBlock,
+    std::unordered_map<int, std::vector<int>>& ghostNeighbors) {
+    std::unordered_map<int, std::vector<int>> neighbors;
+    int totalCells = rows * cols;
+
+    for (int i = 0; i < totalCells; ++i) {
+        if (cellToBlock.find(i) == cellToBlock.end()) continue;
+
+        int row = i / cols;
+        int col = i % cols;
+
+        std::vector<int> neighborList;
+        std::vector<int> directions = {
+            (row > 0) ? (i - cols) : -1,
+            (row < rows - 1) ? (i + cols) : -1,
+            (col > 0) ? (i - 1) : -1,
+            (col < cols - 1) ? (i + 1) : -1};
+
+        for (int neighborId : directions) {
+            if (neighborId != -1 && cellToBlock.find(neighborId) != cellToBlock.end()) {
+                if (cellToBlock.at(i) == cellToBlock.at(neighborId)) {
+                    neighborList.push_back(neighborId); // local
+                } else {
+                    ghostNeighbors[i].push_back(neighborId); // ghost
+                    neighborList.push_back(neighborId);      // also keep in main list
+                }
+            }
+        }
+
+        neighbors[i] = neighborList;
+    }
+
+    return neighbors;
+}
+
+std::unordered_map<int, std::vector<int>> GridSimulation::buildBlockNeighborMap(
+    const std::map<int, std::list<int>>& allBlocks,
+    const std::unordered_map<int, std::vector<int>>& cellNeighborMap) {
+    std::unordered_map<int, std::vector<int>> blockNeighborMap;
+    if (allBlocks.empty() || cellNeighborMap.empty()) return blockNeighborMap;
+
+    std::unordered_map<int, int> cellToBlockMap;
+    for (const auto& [blockId, cellList] : allBlocks) {
+        for (int cellId : cellList) {
+            cellToBlockMap[cellId] = blockId;
+        }
+    }
+
+    for (const auto& [blockId, cellList] : allBlocks) {
+        std::unordered_set<int> neighborBlockIdsSet;
+        for (int cellId : cellList) {
+            auto it_neighbors = cellNeighborMap.find(cellId);
+            if (it_neighbors != cellNeighborMap.end()) {
+                for (int neighborCellId : it_neighbors->second) {
+                    auto it_block = cellToBlockMap.find(neighborCellId);
+                    if (it_block != cellToBlockMap.end()) {
+                        int neighborBlockId = it_block->second;
+                        if (neighborBlockId != blockId) {
+                            neighborBlockIdsSet.insert(neighborBlockId);
+                        }
+                    }
+                }
+            }
+        }
+        blockNeighborMap[blockId] = std::vector<int>(neighborBlockIdsSet.begin(), neighborBlockIdsSet.end());
+    }
+
+    return blockNeighborMap;
+}
+
+void GridSimulation::setupSimulation(
+    MPIHandler& mpi,
+    const std::vector<std::vector<double>>& fullData,
+    std::map<int, std::list<int>>& allBlocks,
+    std::unordered_map<int, std::vector<int>>& cellNeighborMap,
+    std::unordered_map<int, std::vector<int>>& ghostNeighborMap,
+    std::unordered_map<int, std::vector<int>>& blockNeighborMap) {
+    if (mpi.getRank() == 0) {
+        std::cout << "Rank 0: Setting up simulation...\n";
+        auto cells = createCellsMap();
+        allBlocks = divideIntoOptimalBlocks(cells, mpi.getSize());
+
+        std::cout << "Rank 0: Divided cells into " << allBlocks.size() << " blocks.\n";
+
+        std::unordered_map<int, int> cellToBlock;
+        for (const auto& [blockId, cellList] : allBlocks) {
+            for (int cell : cellList) {
+                cellToBlock[cell] = blockId;
+            }
+        }
+
+        int totalCells = fullData.size();
+        int cols = std::ceil(std::sqrt(totalCells));
+        int rows = (totalCells + cols - 1) / cols;
+
+        cellNeighborMap = build2DGridNeighborMap(rows, cols, cellToBlock, ghostNeighborMap);
+        blockNeighborMap = buildBlockNeighborMap(allBlocks, cellNeighborMap);
+
+        std::cout << "Rank 0: Built neighbor maps.\n";
+    }
+
+    allBlocks = mpi.distributeBlocks(allBlocks);
+    std::cout << "Rank " << rank << ": Received " << allBlocks.size() << " blocks after distribution.\n";
+
+    auto localCellData = mpi.getDataForLocalBlocks(allBlocks, fullData);
+    std::cout << "Rank " << rank << ": Received data for " << localCellData.size() << " cells.\n";
+
+    blockNeighborMap = mpi.broadcastBlockNeighborMap(blockNeighborMap);
+    std::cout << "Rank " << rank << ": Received block neighbor map.\n";
+
+    setGridFromLocalData(allBlocks, localCellData);
+    std::cout << "Rank " << rank << ": Set grid from local data.\n";
+
+    setBlockInfo(allBlocks, blockNeighborMap);
+    setCellNeighborMap(cellNeighborMap);
+    setGhostNeighborMap(ghostNeighborMap);
+    std::cout << "Rank " << rank << ": Completed simulation setup.\n";
+}
+
+std::pair<int, int> GridSimulation::calculateGridDimensions(int totalCells, int numBlocks) {
+    if (totalCells % numBlocks != 0) {
+        int extraCells = numBlocks - (totalCells % numBlocks);
+        totalCells += extraCells;
+    }
+
+    int blockRows = static_cast<int>(std::sqrt(numBlocks));
+    while (numBlocks % blockRows != 0) {
+        blockRows--;
+    }
+    int blockCols = numBlocks / blockRows;
+
+    int cellsPerBlock = totalCells / numBlocks;
+    int cellsPerBlockRow = static_cast<int>(std::sqrt(cellsPerBlock));
+    while (cellsPerBlock % cellsPerBlockRow != 0) {
+        cellsPerBlockRow--;
+    }
+    int cellsPerBlockCol = cellsPerBlock / cellsPerBlockRow;
+
+    int rows = blockRows * cellsPerBlockRow;
+    int cols = blockCols * cellsPerBlockCol;
+
+    return {rows, cols};
 }
