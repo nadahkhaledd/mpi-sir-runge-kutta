@@ -54,7 +54,6 @@ std::unordered_map<int, std::vector<int>> build2DGridNeighborMap(
         neighbors[i] = neighborList;
     }
 
-    std::cerr << "DEBUG: Finished build2DGridNeighborMap. Size = " << neighbors.size() << std::endl;
     return neighbors;
 }
 
@@ -66,7 +65,6 @@ std::unordered_map<int, std::vector<int>> buildBlockNeighborMap(
     std::unordered_map<int, std::vector<int>> blockNeighborMap;
     if (allBlocks.empty() || cellNeighborMap.empty())
     {
-        std::cerr << "DEBUG: Empty input to buildBlockNeighborMap." << std::endl;
         return blockNeighborMap;
     }
 
@@ -111,7 +109,6 @@ std::unordered_map<int, std::vector<int>> buildBlockNeighborMap(
 
 int main(int argc, char *argv[])
 {
-    //const int blockSize = 4;
     MPIHandler mpi(argc, argv);
 
     std::vector<std::vector<double>> fullData;
@@ -127,10 +124,8 @@ int main(int argc, char *argv[])
     if (mpi.getRank() == 0)
     {
         fullData = CSVParser::loadUSStateData("./data/sorted_initial_conditions.csv");
-        std::cout << "Rank 0: Total rows loaded from dataset: " << fullData.size() << "\n";
         if (fullData.empty())
         {
-            std::cerr << "Rank 0 Error: Failed to load initial data. Aborting." << std::endl;
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
 
@@ -143,16 +138,6 @@ int main(int argc, char *argv[])
             {
                 cellToBlock[cell] = blockId;
             }
-        }
-
-        for (const auto &[blockId, cellList] : allBlocks)
-        {
-            std::cout << "Block " << blockId << ": ";
-            for (int cell : cellList)
-            {
-                std::cout << cell << " ";
-            }
-            std::cout << "\n";
         }
 
         int totalCells = fullData.size();
@@ -191,8 +176,6 @@ int main(int argc, char *argv[])
 
     SIRModel model(0.3, 0.1, 0.2, 100);
     GridSimulation simulation(model, mpi.getRank(), mpi.getSize());
-    //simulation.initialize(localBlocks, mpi.getSize());
-
 
     simulation.setCellNeighborMap(cellNeighborMap);
     simulation.setGhostNeighborMap(ghostNeighborMap);
@@ -220,10 +203,6 @@ int main(int argc, char *argv[])
             if (targetRank != -1)
             {
                 blockToRankMap[blockId] = targetRank;
-            }
-            else
-            {
-                std::cerr << "Rank 0 Error: Could not determine owner rank for block " << blockId << "\n";
             }
             blockCounter++;
         }
@@ -253,7 +232,6 @@ int main(int argc, char *argv[])
     simulation.setGridFromLocalData(localBlocks, localCellData);
     simulation.setBlockInfo(localBlocks, blockNeighborMap);
 
-
     std::vector<std::vector<double>> localResults = simulation.runSimulation();
     std::vector<int> recvCounts;      // To hold the number of doubles each rank contributes
     std::vector<int> displacements;   // To hold the offset into the gathered buffer per rank
@@ -261,7 +239,6 @@ int main(int argc, char *argv[])
     std::vector<double> globalResults = mpi.gatherResults(localResults, recvCounts, displacements);
 
     mpi.writeResults(globalResults, recvCounts, displacements);
-
 
     return 0;
 }
