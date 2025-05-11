@@ -132,12 +132,14 @@ void MPIHandler::writeResults(const std::vector<double>& globalFlat,
 // distributeBlocks: Distributes ONLY block structure (IDs)
 std::map<int, std::list<int>> MPIHandler::distributeBlocks(
     const std::map<int, std::list<int>>& allBlocks) {
+    std::cout << "Rank " << rank << ": Starting block distribution...\n";
 
     std::map<int, std::list<int>> localBlocks;
     int totalBlocks = 0;
 
     if (rank == 0) {
         totalBlocks = allBlocks.size();
+        std::cout << "Rank 0: Distributing " << totalBlocks << " blocks among " << size << " processes.\n";
     }
     MPI_Bcast(&totalBlocks, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
@@ -223,6 +225,7 @@ std::map<int, std::list<int>> MPIHandler::distributeBlocks(
     }
 
     MPI_Barrier(MPI_COMM_WORLD);
+    std::cout << "Rank " << rank << ": Finished block distribution. Local blocks: " << localBlocks.size() << "\n";
     return localBlocks;
 }
 
@@ -230,6 +233,7 @@ std::map<int, std::list<int>> MPIHandler::distributeBlocks(
 std::map<int, std::vector<double>> MPIHandler::getDataForLocalBlocks(
     const std::map<int, std::list<int>>& localBlocks,
     const std::vector<std::vector<double>>& fullData) {
+    std::cout << "Rank " << rank << ": Starting data distribution for local blocks...\n";
 
     std::map<int, std::vector<double>> localCellData;
 
@@ -341,12 +345,15 @@ std::map<int, std::vector<double>> MPIHandler::getDataForLocalBlocks(
     }
 
     MPI_Barrier(MPI_COMM_WORLD);
+    std::cout << "Rank " << rank << ": Received data for " << localCellData.size() << " cells.\n";
     return localCellData;
 }
 
 // broadcastBlockNeighborMap: Broadcasts the block adjacency map
 std::unordered_map<int, std::vector<int>> MPIHandler::broadcastBlockNeighborMap(
     const std::unordered_map<int, std::vector<int>>& mapToSend) {
+    std::cout << "Rank " << rank << ": Broadcasting block neighbor map...\n";
+
     long long totalBytes = 0;
     std::vector<char> buffer;
     if (rank == 0) {
@@ -392,5 +399,6 @@ std::unordered_map<int, std::vector<int>> MPIHandler::broadcastBlockNeighborMap(
             receivedMap[key] = std::move(neighbors);
         }
     }
+    std::cout << "Rank " << rank << ": Received block neighbor map with " << receivedMap.size() << " entries.\n";
     return (rank == 0) ? mapToSend : receivedMap;
 }

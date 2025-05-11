@@ -59,20 +59,23 @@ void GridSimulation::setGrid(const std::vector<SIRCell>& initialGrid) {
 }
 
 std::map<std::string, int> GridSimulation::createCellsMap() {
+    std::cout << "Rank " << rank << ": Starting to create cells map from CSV file.\n";
     std::map<std::string, int> cells;
     std::string filePath;
     try {
         std::string currentDir = getCurrentDirectory();
         filePath = currentDir + "/data/sorted_initial_conditions.csv";
     } catch (const std::runtime_error& e) {
-        std::cerr << "Error getting current directory: " << e.what() << ". Cannot create cells map." << std::endl;
+        std::cerr << "Rank " << rank << ": Error getting current directory: " << e.what() << ". Cannot create cells map.\n";
         return {};
     }
     std::ifstream infile(filePath);
     if (!infile) {
-        std::cerr << "Error: Could not open file for createCellsMap: " << filePath << "\n";
+        std::cerr << "Rank " << rank << ": Error: Could not open file for createCellsMap: " << filePath << "\n";
         return {};
     }
+    std::cout << "Rank " << rank << ": Successfully opened file for createCellsMap: " << filePath << "\n";
+
     std::string line;
     int cellId = 0;
     bool headerFound = false;
@@ -94,6 +97,7 @@ std::map<std::string, int> GridSimulation::createCellsMap() {
         }
     }
     infile.close();
+    std::cout << "Rank " << rank << ": Created cells map with " << cells.size() << " entries.\n";
     return cells;
 }
 
@@ -127,8 +131,7 @@ std::map<int, std::list<int>> GridSimulation::divideIntoBlocks(
 std::map<int, std::list<int>> GridSimulation::divideIntoOptimalBlocks(
     const std::map<std::string, int>& cells, int numProcesses) {
     int totalCells = static_cast<int>(cells.size());
-
-    std::cout << "Finding optimal block distribution for " << totalCells << " cells...\n";
+    std::cout << "Rank " << rank << ": Finding optimal block distribution for " << totalCells << " cells...\n";
 
     // Handle edge case: fewer cells than processes
     if (totalCells <= numProcesses) {
@@ -212,7 +215,7 @@ std::map<int, std::list<int>> GridSimulation::divideIntoOptimalBlocks(
     }
 
     int cellsPerBlock = totalCells / bestNumBlocks;
-    std::cout << "Optimal distribution: " << bestNumBlocks << " blocks with "
+    std::cout << "Rank " << rank << ": Optimal distribution: " << bestNumBlocks << " blocks with "
               << cellsPerBlock << " cells each.\n";
 
     // Divide cells into the best number of blocks
@@ -485,8 +488,11 @@ void GridSimulation::setupSimulation(
     std::unordered_map<int, std::vector<int>>& ghostNeighborMap,
     std::unordered_map<int, std::vector<int>>& blockNeighborMap) {
     if (mpi.getRank() == 0) {
+        std::cout << "Rank 0: Setting up simulation...\n";
         auto cells = createCellsMap();
         allBlocks = divideIntoOptimalBlocks(cells, mpi.getSize());
+
+        std::cout << "Rank 0: Divided cells into " << allBlocks.size() << " blocks.\n";
 
         std::unordered_map<int, int> cellToBlock;
         for (const auto& [blockId, cellList] : allBlocks) {
@@ -501,16 +507,26 @@ void GridSimulation::setupSimulation(
 
         cellNeighborMap = build2DGridNeighborMap(rows, cols, cellToBlock, ghostNeighborMap);
         blockNeighborMap = buildBlockNeighborMap(allBlocks, cellNeighborMap);
+
+        std::cout << "Rank 0: Built neighbor maps.\n";
     }
 
     allBlocks = mpi.distributeBlocks(allBlocks);
+    std::cout << "Rank " << rank << ": Received " << allBlocks.size() << " blocks after distribution.\n";
+
     auto localCellData = mpi.getDataForLocalBlocks(allBlocks, fullData);
+    std::cout << "Rank " << rank << ": Received data for " << localCellData.size() << " cells.\n";
+
     blockNeighborMap = mpi.broadcastBlockNeighborMap(blockNeighborMap);
+    std::cout << "Rank " << rank << ": Received block neighbor map.\n";
 
     setGridFromLocalData(allBlocks, localCellData);
+    std::cout << "Rank " << rank << ": Set grid from local data.\n";
+
     setBlockInfo(allBlocks, blockNeighborMap);
     setCellNeighborMap(cellNeighborMap);
     setGhostNeighborMap(ghostNeighborMap);
+    std::cout << "Rank " << rank << ": Completed simulation setup.\n";
 }
 
 std::pair<int, int> GridSimulation::calculateGridDimensions(int totalCells, int numBlocks) {
