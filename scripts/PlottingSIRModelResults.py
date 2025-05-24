@@ -1,6 +1,7 @@
 import pandas as pd
 import matplotlib.pyplot as plt
-
+from matplotlib import animation
+import seaborn as sns
 # -----------------------------
 # Load Simulation CSV
 # -----------------------------
@@ -108,6 +109,125 @@ def plot_global_stacked_area(df):
     plt.savefig("./plots/sir_global_stacked_area.png")
     print("Saved: sir_global_stacked_area.png")
 
+# -----------------------------
+# Plot 5: Heatmap – Infection Intensity Over Time (Per Rank)
+# -----------------------------
+def plot_infection_heatmap_per_rank(df, vmin=0.0, vmax=0.25):
+    """
+    Creates a heatmap of the average infected proportion (I_avg)
+    across time for each MPI rank.
+
+    - The x-axis represents time steps.
+    - The y-axis corresponds to MPI ranks (processes).
+    - Cell values (color) show the level of infection.
+
+    This visualization is helpful for:
+    - Spotting temporal infection peaks across ranks
+    - Identifying which regions were hit harder or earlier
+    - Debugging load balance or propagation dynamics
+
+    Parameters:
+    - df: Pandas DataFrame containing simulation results.
+    - vmin: Minimum value for the heatmap color scale (default: 0.0).
+    - vmax: Maximum value for the heatmap color scale (default: 0.25).
+      Adjust these to control sensitivity/contrast in the plot.
+
+    NOTE:
+    - Assumes the `Rank`, `Time`, and `I_avg` columns are present.
+    - Grouped by Rank → Time for matrix-style heatmap.
+    """
+
+    # Pivot to get a matrix: Rows = Ranks, Columns = Time, Values = I_avg
+    pivoted = df.pivot(index="Rank", columns="Time", values="I_avg")
+
+    plt.figure(figsize=(12, 6))
+    sns.heatmap(
+        pivoted,
+        cmap="YlOrRd",
+        vmin=vmin,
+        vmax=vmax,
+        cbar_kws={"label": "Infected Proportion"}
+    )
+    plt.title("Heatmap of Infection Intensity Over Time (Per Rank)")
+    plt.xlabel("Time")
+    plt.ylabel("MPI Rank")
+    plt.tight_layout()
+    plt.savefig("./plots/infection_heatmap_per_rank.png")
+    print("Saved: infection_heatmap_per_rank.png")
+
+
+
+
+# -----------------------------
+# Plot 6: Animated Infection Spread (Per Rank Over Time)
+# -----------------------------
+def animate_infection(df):
+    """
+    Generates an animated bar chart showing the spread of infection (I_avg)
+    across MPI ranks over time.
+
+    - Each frame of the animation corresponds to a timestep.
+    - Bar height represents the infection proportion for that rank.
+    - Useful for visually tracking temporal progression of the epidemic
+      and how it impacts different ranks differently.
+
+    Parameters:
+    - df: Pandas DataFrame with columns 'Rank', 'Time', 'I_avg'.
+
+    Output:
+    - Saves an animated .gif of the infection evolution to ./plots/infection_animation.gif.
+    """
+
+    ranks = df["Rank"].unique()
+    times = sorted(df["Time"].unique())
+    fig, ax = plt.subplots(figsize=(10, 6))
+    bar = ax.bar(ranks, [0] * len(ranks), color="orange")
+    max_i = df["I_avg"].max()
+    ax.set_ylim(0, max_i * 1.2)  # Add headroom
+
+    def update(t):
+        time_data = df[df["Time"] == t]
+        i_vals = [time_data[time_data["Rank"] == r]["I_avg"].values[0]
+                  if r in time_data["Rank"].values else 0 for r in ranks]
+        for rect, h in zip(bar, i_vals):
+            rect.set_height(h)
+        ax.set_title(f"Infection Spread at t = {t:.1f}")
+        return bar
+
+    ani = animation.FuncAnimation(fig, update, frames=times, blit=False, repeat=False)
+    ani.save("./plots/infection_animation.gif", writer="pillow", fps=5)
+    print("Saved: infection_animation.gif")
+
+# -----------------------------
+# Plot 7: Peak Infection Time per MPI Rank
+# -----------------------------
+def plot_peak_infection_times(df):
+    """
+    Plots a bar chart showing the time at which each MPI rank experienced
+    its peak infection level.
+
+    - X-axis: MPI Rank
+    - Y-axis: Time of highest infection (I_avg)
+    - Highlights temporal heterogeneity of epidemic spread
+
+    Parameters:
+    - df: Pandas DataFrame containing columns 'Rank', 'Time', and 'I_avg'.
+
+    Output:
+    - Saves the figure to ./plots/peak_infection_time_per_rank.png
+    """
+
+    peak_times = df.loc[df.groupby("Rank")["I_avg"].idxmax()][["Rank", "Time", "I_avg"]]
+
+    plt.figure(figsize=(10, 5))
+    plt.bar(peak_times["Rank"], peak_times["Time"], color="purple", alpha=0.7)
+    plt.xlabel("MPI Rank")
+    plt.ylabel("Time of Peak Infection")
+    plt.title("Peak Infection Timing per Rank")
+    plt.grid(True, linestyle="--", alpha=0.5)
+    plt.tight_layout()
+    plt.savefig("./plots/peak_infection_time_per_rank.png")
+    print("Saved: peak_infection_time_per_rank.png")
 
 # -----------------------------
 # Run all plots
@@ -121,3 +241,13 @@ if __name__ == "__main__":
         plot_stacked_area_per_rank(df)
         plot_sir_global_line(df)
         plot_global_stacked_area(df)
+        plot_infection_heatmap_per_rank(df)
+        animate_infection(df)
+        plot_peak_infection_times(df)
+        print("All plots generated successfully.")
+    else:
+        print("Failed to load data. No plots generated.")
+
+# -----------------------------
+# End of script
+# -----------------------------
