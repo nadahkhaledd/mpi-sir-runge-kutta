@@ -517,7 +517,12 @@ void GridSimulation::setupSimulation(
     auto localCellData = mpi.getDataForLocalBlocks(allBlocks, fullData);
     std::cout << "Rank " << rank << ": Received data for " << localCellData.size() << " cells.\n";
 
-    blockNeighborMap = mpi.broadcastBlockNeighborMap(blockNeighborMap);
+    if (mpi.getRank() != 0) {
+        blockNeighborMap = mpi.broadcastBlockNeighborMap({});
+    } else {
+        mpi.broadcastBlockNeighborMap(blockNeighborMap); // don't overwrite
+    }
+
     std::cout << "Rank " << rank << ": Received block neighbor map.\n";
 
     setGridFromLocalData(allBlocks, localCellData);
