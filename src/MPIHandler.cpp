@@ -13,8 +13,9 @@
 #include <stdexcept>
 #include <set>
 #include <iomanip>      // For std::fixed, std::setprecision
-#include <string>       // For std::string (not strictly needed for this timing version but good to have)
-#include <algorithm>    // For std::max/min in gatherResults logic, and MPI_MAX
+#include <string>       // For std::string
+#include <numeric>      // For std::accumulate (not used for summary here)
+#include <algorithm>    // For std::max/min in gatherResults, and MPI_MAX reduce op
 
 // Constructor: Initialize MPI
 MPIHandler::MPIHandler(int argc, char *argv[]) {
@@ -128,7 +129,7 @@ std::vector<double> MPIHandler::gatherResults(const std::vector<std::vector<doub
     double phaseDuration = MPI_Wtime() - totalPhaseStartTime;
     double maxDuration;
     MPI_Reduce(&phaseDuration, &maxDuration, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
-    MPI_Barrier(MPI_COMM_WORLD); // Ensure reduce is done before print
+    MPI_Barrier(MPI_COMM_WORLD); 
     if (rank == 0) {
         std::cout << std::fixed << std::setprecision(6) << "TIMING [Phase: gatherResults_Total_Max]: " << maxDuration << "s\n";
     }
@@ -210,7 +211,7 @@ std::map<int, std::list<int>> MPIHandler::distributeBlocks(
     if (rank == 0) {
         int currentBlockIndex=0;
         for(const auto& p : allBlocks){
-            if(currentBlockIndex>=startBlockIndex && currentBlockIndex<startBlockIndex+numMyBlocks) { // Corrected typo
+            if(currentBlockIndex>=startBlockIndex && currentBlockIndex<startBlockIndex+numMyBlocks) { // Corrected typo here
                 localBlocks[p.first]=p.second;
             }
             currentBlockIndex++;
@@ -226,7 +227,7 @@ std::map<int, std::list<int>> MPIHandler::distributeBlocks(
     } else {
         while(true){int ds;MPI_Status st;MPI_Recv(&ds,1,MPI_INT,0,0,MPI_COMM_WORLD,&st);if(ds==-1)break; if(ds>0){std::vector<int>bd(ds);MPI_Recv(bd.data(),ds,MPI_INT,0,1,MPI_COMM_WORLD,MPI_STATUS_IGNORE);if(bd.size()>=2){int bId=bd[0];int nC=bd[1];if(bd.size()==static_cast<size_t>(2+nC)){std::list<int>cl;for(int i=0;i<nC;++i)cl.push_back(bd[2+i]);localBlocks[bId]=cl;}}}}
     }
-    double commLoopDuration = MPI_Wtime() - commLoopStartTime; // Each rank measures its loop part
+    double commLoopDuration = MPI_Wtime() - commLoopStartTime;
     double maxCommLoopDuration;
     MPI_Reduce(&commLoopDuration, &maxCommLoopDuration, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
     MPI_Barrier(MPI_COMM_WORLD);
@@ -264,7 +265,7 @@ std::map<int, std::vector<double>> MPIHandler::getDataForLocalBlocks(
     double gatherRequestsStartTime = MPI_Wtime();
     std::vector<int> requestSizes(size);
     std::vector<int> requestDispls(size);
-    std::vector<int> gatheredIdsBuffer;
+    std::vector<int> gatheredIdsBuffer; // Will be resized on rank 0
 
     int myRequestSize = neededCellIds.size();
     MPI_Gather(&myRequestSize, 1, MPI_INT, requestSizes.data(), 1, MPI_INT, 0, MPI_COMM_WORLD);
@@ -286,7 +287,7 @@ std::map<int, std::vector<double>> MPIHandler::getDataForLocalBlocks(
     MPI_Barrier(MPI_COMM_WORLD);
     double dataDistCommStartTime = MPI_Wtime();
     int doublesPerCell = 0;
-    std::vector<int> sendDataSizes(size);
+    std::vector<int> sendDataSizes(size); // For Scatterv counts
 
     if (rank == 0) {
         bool anyReq=false; for(int s:requestSizes)if(s>0)anyReq=true;
@@ -353,7 +354,7 @@ std::unordered_map<int, std::vector<int>> MPIHandler::broadcastBlockNeighborMap(
     }
 
     std::unordered_map<int, std::vector<int>> receivedMap;
-    if (rank != 0 && totalBytes > 0) { // Deserialization only for other ranks if data exists
+    if (rank != 0 && totalBytes > 0) {
         if (totalBytes < 0 || totalBytes % sizeof(int) != 0) MPI_Abort(MPI_COMM_WORLD,1);
         size_t numInts = static_cast<size_t>(totalBytes) / sizeof(int);
         std::vector<int> flatIntBuffer(numInts);
@@ -363,18 +364,18 @@ std::unordered_map<int, std::vector<int>> MPIHandler::broadcastBlockNeighborMap(
             int numEntries = flatIntBuffer[0]; if (numEntries < 0) MPI_Abort(MPI_COMM_WORLD,1);
             size_t currentIndex = 1; receivedMap.reserve(numEntries);
             for (int i = 0; i < numEntries; ++i) {
-                if (currentIndex + 1 >= numInts) { // Check for key and numNeighbors count
-                     std::cerr << "Rank " << rank << " Error: Buffer OOB reading key/count for entry " << i << ". Idx=" << currentIndex << ", Size=" << numInts << std::endl;
-                     MPI_Abort(MPI_COMM_WORLD,1);
+                // Corrected Indentation
+                if (currentIndex + 1 >= numInts) { 
+                    std::cerr << "Rank " << rank << " Error: Buffer OOB reading key/count for entry " << i << ". Idx=" << currentIndex << ", Size=" << numInts << std::endl;
+                    MPI_Abort(MPI_COMM_WORLD,1); 
                 }
                 int key = flatIntBuffer[currentIndex++];
                 int numNeighbors = flatIntBuffer[currentIndex++];
-
                 if (numNeighbors < 0) {
                     std::cerr << "Rank " << rank << " Error: Negative numNeighbors " << numNeighbors << " for key " << key << std::endl;
                     MPI_Abort(MPI_COMM_WORLD,1);
                 }
-                if (currentIndex + static_cast<size_t>(numNeighbors) > numInts) { // Cast numNeighbors for comparison
+                if (currentIndex + static_cast<size_t>(numNeighbors) > numInts) {
                     std::cerr << "Rank " << rank << " Error: Buffer overrun reading neighbors for key " << key << ". Need " << numNeighbors << ", Avail " << numInts - currentIndex << std::endl;
                     MPI_Abort(MPI_COMM_WORLD,1);
                 }
@@ -391,8 +392,10 @@ std::unordered_map<int, std::vector<int>> MPIHandler::broadcastBlockNeighborMap(
         }
     }
 
+    double totalDurationMap = MPI_Wtime() - totalPhaseStartTime;
+    double maxTotalDurationMap; MPI_Reduce(&totalDurationMap, &maxTotalDurationMap, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
     MPI_Barrier(MPI_COMM_WORLD);
-    if(rank==0) std::cout << std::fixed << std::setprecision(6) << "TIMING [Rank 0, Phase: bcastBlockNeighborMap_Total]: " << (MPI_Wtime() - totalPhaseStartTime) << "s\n";
+    if(rank==0) std::cout << std::fixed << std::setprecision(6) << "TIMING [Phase: bcastBlockNeighborMap_Total_Max]: " << maxTotalDurationMap << "s\n";
     // std::cout << "Rank " << rank << ": Received block neighbor map with " << ((rank == 0) ? mapToSend.size() : receivedMap.size()) << " entries.\n"; // Moved
     return (rank == 0) ? mapToSend : receivedMap;
 }
