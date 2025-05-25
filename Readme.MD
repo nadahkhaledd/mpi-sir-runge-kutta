@@ -242,7 +242,7 @@ This hands-on challenge was part of the final exam for the course Advanced Metho
 
 We also thank **Professor [Luca Formaggia](https://formaggia.faculty.polimi.it/)** for his exceptional teaching and mentorship throughout the course.
 
-This project has greatly enhanced our understanding of numerical methods and their applications in high-performance computing.
+
 ---
 
 ## Contributors
