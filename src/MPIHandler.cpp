@@ -1,7 +1,7 @@
 #include "../header/MPIHandler.h"
 #include "../header/CSVParser.h" // Needed for mapToSIR
 #include "../header/SIRCell.h"   // Needed for SIRCell type
-
+#include "../header/TimingUtils.h"
 #include <mpi.h>
 #include <iostream>
 #include <fstream>
@@ -171,78 +171,128 @@ void MPIHandler::writeResults(const std::vector<double>& globalFlat,
         std::cout << std::fixed << std::setprecision(6) << "TIMING [Rank 0, Phase: writeResults_FileIO]: " << (MPI_Wtime() - ioStartTime) << "s\n";
     }
 }
-
 // distributeBlocks: Distributes ONLY block structure (IDs)
 std::map<int, std::list<int>> MPIHandler::distributeBlocks(
     const std::map<int, std::list<int>>& allBlocks) {
-    // std::cout << "Rank " << rank << ": Starting block distribution...\n"; // Moved
-    MPI_Barrier(MPI_COMM_WORLD);
-    double totalPhaseStartTime = MPI_Wtime();
+
+    // General informational message (optional, printed by each rank before timing)
+    // std::cout << "Rank " << rank << ": MPIHandler::distributeBlocks called." << std::endl;
+
+    MPI_Barrier(MPI_COMM_WORLD); // Synchronize before starting overall phase timing
+    double totalPhase_StartTime = TimingUtils::startTimer(); // Start timer for the whole function
 
     std::map<int, std::list<int>> localBlocks;
     int totalBlocks = 0;
 
-    MPI_Barrier(MPI_COMM_WORLD);
-    double bcastTime = MPI_Wtime();
+    // --- Timing MPI_Bcast of totalBlocks ---
+    MPI_Barrier(MPI_COMM_WORLD); // Sync for this specific collective's timing start
+    double bcastTotalBlocks_StartTime = TimingUtils::startTimer();
     if (rank == 0) {
         totalBlocks = allBlocks.size();
+        // Informational print by Rank 0
         std::cout << "Rank 0 (distributeBlocks): Distributing " << totalBlocks << " blocks among " << size << " processes.\n";
     }
     MPI_Bcast(&totalBlocks, 1, MPI_INT, 0, MPI_COMM_WORLD);
-    MPI_Barrier(MPI_COMM_WORLD);
-    if (rank == 0) {
-        std::cout << std::fixed << std::setprecision(6) << "TIMING [Rank 0, Phase: distributeBlocks_Bcast_TotalBlocks]: " << (MPI_Wtime() - bcastTime) << "s\n";
-    }
+    MPI_Barrier(MPI_COMM_WORLD); // Ensure Bcast completes on all before Rank 0 measures/prints
+    // Rank 0 prints its observed time for this collective, and logs it.
+    TimingUtils::printAndLogRank0PhaseTime("distributeBlocks_Bcast_TotalBlocks", bcastTotalBlocks_StartTime, rank);
+    // --- End Timing Bcast ---
+
 
     if (totalBlocks == 0) {
-        // std::cout << "Rank " << rank << ": No blocks to distribute." << std::endl; // Moved
-        MPI_Barrier(MPI_COMM_WORLD);
-        if(rank==0) std::cout << std::fixed << std::setprecision(6) << "TIMING [Rank 0, Phase: distributeBlocks_Total_Empty]: " << (MPI_Wtime() - totalPhaseStartTime) << "s\n";
+        // Optional informational print
+        // if (rank == 0) std::cout << "Rank 0 (distributeBlocks): No blocks to distribute." << std::endl;
+        double totalEmpty_LocalDuration = TimingUtils::stopTimer(totalPhase_StartTime);
+        // All ranks participate, Rank 0 prints summary and logs it.
+        TimingUtils::printAndLogTimingSummary("distributeBlocks_Total_Empty", totalEmpty_LocalDuration, rank, size);
         return localBlocks;
     }
 
+    // --- Block assignment logic (unchanged from your working version) ---
     int blocksPerProc = totalBlocks / size;
     int extraBlocks = totalBlocks % size;
     int numMyBlocks = (rank < extraBlocks) ? (blocksPerProc + 1) : blocksPerProc;
     int startBlockIndex = (rank < extraBlocks) ? (rank * (blocksPerProc + 1)) : (rank * blocksPerProc + extraBlocks);
 
-    MPI_Barrier(MPI_COMM_WORLD);
-    double commLoopStartTime = MPI_Wtime();
+    // --- Timing Communication Loop (Send/Recv of block structures) ---
+    MPI_Barrier(MPI_COMM_WORLD); // Sync before the parallel send/recv loop
+    double commLoop_StartTime = TimingUtils::startTimer(); // Each rank starts its own timer for its part
     if (rank == 0) {
-        int currentBlockIndex=0;
-        for(const auto& p : allBlocks){
-            if(currentBlockIndex>=startBlockIndex && currentBlockIndex<startBlockIndex+numMyBlocks) { // Corrected typo here
-                localBlocks[p.first]=p.second;
+        int currentBlockIndex = 0;
+        for (const auto& p : allBlocks) { // Using p for std::pair
+            if (currentBlockIndex >= startBlockIndex && currentBlockIndex < startBlockIndex + numMyBlocks) {
+                localBlocks[p.first] = p.second;
             }
             currentBlockIndex++;
         }
-        int blockCounter=0;
-        for(const auto& p : allBlocks){
-            int targetRank=-1;
-            for(int r=0;r<size;++r){int rNB=(r<extraBlocks)?(blocksPerProc+1):blocksPerProc;int rS=(r<extraBlocks)?(r*(blocksPerProc+1)):(r*blocksPerProc+extraBlocks); if(blockCounter>=rS && blockCounter<rS+rNB){targetRank=r;break;}}
-            if(targetRank>0 && targetRank<size){std::vector<int>bd;bd.push_back(p.first);bd.push_back(static_cast<int>(p.second.size()));bd.insert(bd.end(),p.second.begin(),p.second.end());int ds=bd.size();MPI_Send(&ds,1,MPI_INT,targetRank,0,MPI_COMM_WORLD);if(ds>0)MPI_Send(bd.data(),ds,MPI_INT,targetRank,1,MPI_COMM_WORLD);}
+        int blockCounter = 0;
+        for (const auto& p : allBlocks) { // Using p for std::pair
+            int targetRank = -1;
+            // Determine targetRank based on blockCounter (your existing logic)
+            int tempBlocksPerProc = totalBlocks / size; // Recalculate for safety or pass from above
+            int tempExtraBlocks = totalBlocks % size;
+            for (int r = 0; r < size; ++r) {
+                int rNB = (r < tempExtraBlocks) ? (tempBlocksPerProc + 1) : tempBlocksPerProc;
+                int rS = (r < tempExtraBlocks) ? (r * (tempBlocksPerProc + 1)) : (r * tempBlocksPerProc + tempExtraBlocks);
+                if (blockCounter >= rS && blockCounter < rS + rNB) {
+                    targetRank = r;
+                    break;
+                }
+            }
+            if (targetRank > 0 && targetRank < size) { // Send only to other valid ranks
+                std::vector<int> bd; // blockData
+                bd.push_back(p.first); // blockId
+                bd.push_back(static_cast<int>(p.second.size())); // numCells
+                bd.insert(bd.end(), p.second.begin(), p.second.end()); // cellList
+                int ds = bd.size(); // dataSize
+                MPI_Send(&ds, 1, MPI_INT, targetRank, 0, MPI_COMM_WORLD);
+                if (ds > 0) MPI_Send(bd.data(), ds, MPI_INT, targetRank, 1, MPI_COMM_WORLD);
+            }
             blockCounter++;
         }
-        int termSig=-1; for(int proc=1;proc<size;++proc)MPI_Send(&termSig,1,MPI_INT,proc,0,MPI_COMM_WORLD);
-    } else {
-        while(true){int ds;MPI_Status st;MPI_Recv(&ds,1,MPI_INT,0,0,MPI_COMM_WORLD,&st);if(ds==-1)break; if(ds>0){std::vector<int>bd(ds);MPI_Recv(bd.data(),ds,MPI_INT,0,1,MPI_COMM_WORLD,MPI_STATUS_IGNORE);if(bd.size()>=2){int bId=bd[0];int nC=bd[1];if(bd.size()==static_cast<size_t>(2+nC)){std::list<int>cl;for(int i=0;i<nC;++i)cl.push_back(bd[2+i]);localBlocks[bId]=cl;}}}}
+        int termSig = -1; // terminateSignal
+        for (int proc_idx = 1; proc_idx < size; ++proc_idx) MPI_Send(&termSig, 1, MPI_INT, proc_idx, 0, MPI_COMM_WORLD);
+    } else { // Other ranks receive
+        while (true) {
+            int ds; // dataSize
+            MPI_Status st;
+            MPI_Recv(&ds, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &st);
+            if (ds == -1) break; // Termination signal
+            if (ds > 0) {
+                std::vector<int> bd(ds); // blockData
+                MPI_Recv(bd.data(), ds, MPI_INT, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                if (bd.size() >= 2) { // At least blockId and numCells
+                    int bId = bd[0]; // blockId
+                    int nC = bd[1];  // numCells
+                    if (bd.size() == static_cast<size_t>(2 + nC)) {
+                        std::list<int> cl; // cellList
+                        for (int i = 0; i < nC; ++i) cl.push_back(bd[2 + i]);
+                        localBlocks[bId] = cl;
+                    } else {
+                        // Error: size mismatch
+                        std::cerr << "Rank " << rank << " Error in distributeBlocks: Received block data size mismatch for block " << bId << std::endl;
+                    }
+                } else {
+                    // Error: received data too small
+                     std::cerr << "Rank " << rank << " Error in distributeBlocks: Received block data too small (size " << bd.size() << ")" << std::endl;
+                }
+            } else if (ds < -1 ) { // ds == 0 might be possible if a block has 0 cells, but less likely
+                 std::cerr << "Rank " << rank << " Warning/Error in distributeBlocks: Received unusual dataSize " << ds << std::endl;
+            }
+        }
     }
-    double commLoopDuration = MPI_Wtime() - commLoopStartTime;
-    double maxCommLoopDuration;
-    MPI_Reduce(&commLoopDuration, &maxCommLoopDuration, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
-    MPI_Barrier(MPI_COMM_WORLD);
-    if (rank == 0) {
-         std::cout << std::fixed << std::setprecision(6) << "TIMING [Phase: distributeBlocks_CommLoop_Max]: " << maxCommLoopDuration << "s\n";
-    }
+    double commLoop_LocalDuration = TimingUtils::stopTimer(commLoop_StartTime); // Each rank stops its timer
+    // Gather all local durations for the CommLoop and print Min/Max/Avg by Rank 0, also logs it
+    TimingUtils::printAndLogTimingSummary("distributeBlocks_CommLoop", commLoop_LocalDuration, rank, size);
+    // --- End Timing Communication Loop ---
 
-    double totalDuration = MPI_Wtime() - totalPhaseStartTime;
-    double maxTotalDuration;
-    MPI_Reduce(&totalDuration, &maxTotalDuration, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
-    MPI_Barrier(MPI_COMM_WORLD);
-    if (rank == 0) {
-        std::cout << std::fixed << std::setprecision(6) << "TIMING [Phase: distributeBlocks_Total_Max]: " << maxTotalDuration << "s\n";
-    }
-    // std::cout << "Rank " << rank << ": Finished block distribution. Local blocks: " << localBlocks.size() << "\n"; // Moved
+
+    double total_LocalDuration = TimingUtils::stopTimer(totalPhase_StartTime); // Each rank gets its total duration for the function
+    // Gather all total durations and print Min/Max/Avg by Rank 0, also logs it
+    TimingUtils::printAndLogTimingSummary("distributeBlocks_Total", total_LocalDuration, rank, size);
+
+    // General informational message (optional, printed by each rank after timing)
+    // std::cout << "Rank " << rank << ": Finished block distribution. Local blocks: " << localBlocks.size() << "\n";
     return localBlocks;
 }
 

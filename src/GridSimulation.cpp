@@ -2,7 +2,7 @@
 #include "../header/SIRCell.h"
 #include "../header/SIRModel.h"
 #include "../header/CSVParser.h"
-
+#include "../header/TimingUtils.h"
 #include <mpi.h>
 #include <vector>
 #include <map>
@@ -20,6 +20,7 @@
 #include <array>
 #include <cstdio>
 #include <memory>
+#include <iomanip>
 
 std::string getCurrentDirectory() {
     std::array<char, 128> buffer;
@@ -336,74 +337,170 @@ void GridSimulation::updateGridNew() {
 
 // Main MPI Simulation Loop with boundary exchange
 std::vector<std::vector<double>> GridSimulation::runSimulation() {
-    // ... Full implementation from previous step should be here ...
-    // Ensure all std::cout, std::cerr, std::endl uses are valid
-    // Ensure the placeholder for findRankOwningCell is handled or replaced
+    MPI_Barrier(MPI_COMM_WORLD); // Sync before overall simulation timing
+    double totalSimulationWallTime_Start = TimingUtils::startTimer();
+
     std::vector<std::vector<double>> localResults;
+    // Accumulators for total time spent in each phase by THIS RANK over all steps
+    double this_rank_total_mpi_prep_time = 0.0;
+    double this_rank_total_mpi_comm_time = 0.0;
+    double this_rank_total_local_computation_time = 0.0;
+
     if (grid.empty()) {
-        std::cout << "Rank " << rank << " has no cells. Entering synchronization loop." << std::endl;
+        std::cout << "Rank " << rank << ": Grid is empty. Skipping simulation loop, participating in barriers." << std::endl;
         if (size > 1) {
-             for (int step = 0; step < model.getNumSteps(); ++step) {
+             for (int step_counter = 0; step_counter < model.getNumSteps(); ++step_counter) { // Renamed step
                  MPI_Barrier(MPI_COMM_WORLD);
              }
         }
+        MPI_Barrier(MPI_COMM_WORLD); // Ensure all ranks sync before this rank might exit early
+        double emptyGridDuration = TimingUtils::stopTimer(totalSimulationWallTime_Start);
+        // Each rank with an empty grid prints its own (short) duration and logs it if it's rank 0
+        TimingUtils::printAndLogIndividualRankTime("runSimulation_TotalWallTime_EmptyGrid", emptyGridDuration, rank);
         return localResults;
     }
-    std::vector<int> localIndexToGlobalId(grid.size());
-    for(const auto& [globalId, localIndex] : globalToLocalCellIndex) {
-        if (localIndex >= 0 && static_cast<size_t>(localIndex) < grid.size()) {
-            localIndexToGlobalId[localIndex] = globalId;
+
+    std::vector<int> localIndexToGlobalId(grid.size()); // Default init, will be populated
+    for(const auto& entry : globalToLocalCellIndex) { // Using entry as a pair
+        if (entry.second >= 0 && static_cast<size_t>(entry.second) < grid.size()) {
+            localIndexToGlobalId[entry.second] = entry.first;
         } else {
-             std::cerr << "FATAL Error: Rank " << rank << " Invalid local index " << localIndex << " for global ID " << globalId << std::endl; MPI_Abort(MPI_COMM_WORLD, 1);
+             std::cerr << "FATAL Error: Rank " << rank << " Invalid local index " << entry.second << " for global ID " << entry.first << " in runSimulation setup." << std::endl; MPI_Abort(MPI_COMM_WORLD, 1);
         }
     }
     const int DOUBLES_PER_CELL = 3;
     const int MPI_TAG_COUNT = 100;
     const int MPI_TAG_DATA = 200;
-    std::cout << "Rank " << rank << " starting simulation loop for " << model.getNumSteps() << " steps." << std::endl;
-    for (int step = 0; step < model.getNumSteps(); ++step) {
+    // std::cout << "Rank " << rank << " starting simulation loop for " << model.getNumSteps() << " steps." << std::endl; // Moved to main.cpp
+
+    // Use a different loop variable name to avoid conflict if 'step' is used inside your condensed MPI code
+    for (int step_loop_idx = 0; step_loop_idx < model.getNumSteps(); ++step_loop_idx) {
+        // --- 1. Boundary Interaction / MPI Prep ---
+        double mpiPrepStartTime_step = TimingUtils::startTimer();
         std::map<int, std::set<int>> localIndicesToSendToRank;
         std::map<int, std::set<int>> globalIdsToReceiveFromRank;
         for (size_t localIndex = 0; localIndex < grid.size(); ++localIndex) {
             int globalId = localIndexToGlobalId[localIndex];
-            if (!cellNeighborMap.count(globalId)) continue;
+            if (globalId == -1 || !cellNeighborMap.count(globalId)) continue;
             const std::vector<int>& neighborGlobalIds = cellNeighborMap.at(globalId);
             for (int neighborGlobalId : neighborGlobalIds) {
-                if (globalToLocalCellIndex.find(neighborGlobalId) == globalToLocalCellIndex.end()) {
+                if (globalToLocalCellIndex.find(neighborGlobalId) == globalToLocalCellIndex.end()) { // If remote
                     int owningRank = -1; bool foundOwner = false;
-                    // --- REPLACE THIS WITH EFFICIENT LOOKUP ---
-                     for(const auto& [b_id, b_rank] : blockToRankMap) { if (b_rank == rank) continue; /* if (isCellInBlock(...)) { owningRank=b_rank; foundOwner=true; break; } */ }
-                    // --- END REPLACE ---
+                    // --- YOUR ORIGINAL placeholder for owner lookup ---
+                     for(const auto& btor_entry : blockToRankMap) { 
+                        int b_id = btor_entry.first;
+                        int b_rank_val = btor_entry.second;
+                        if (b_rank_val == rank) continue;
+                        // !!! IMPORTANT: This placeholder needs to be replaced with efficient logic
+                        // to check if neighborGlobalId is in block b_id. This might involve
+                        // having access to a global view of allBlocks or a cell_id->block_id map.
+                        // if (/* some_global_all_blocks_map[b_id].contains(neighborGlobalId) */ ) {
+                        //    owningRank=b_rank_val; foundOwner=true; break;
+                        // }
+                    }
+                    // --- END YOUR ORIGINAL placeholder ---
                     if (foundOwner && owningRank != -1) {
                         localIndicesToSendToRank[owningRank].insert(static_cast<int>(localIndex));
                         globalIdsToReceiveFromRank[owningRank].insert(neighborGlobalId);
-                    } else if (size > 1 && !foundOwner) { /* Optional Warning */ }
+                    } else if (size > 1 && !foundOwner && owningRank == -1 ) { /* Optional Warning */ }
                 }
             }
         }
+        this_rank_total_mpi_prep_time += TimingUtils::stopTimer(mpiPrepStartTime_step);
+
+
+        // --- 2. MPI Communication (Sizes & Data) ---
+        double mpiCommStartTime_step = TimingUtils::startTimer();
         std::map<int, int> sendCounts; std::map<int, int> recvCounts;
         std::vector<MPI_Request> countSendRequests, countRecvRequests;
         std::map<int, int> recvCountBuffers;
-        for (const auto& pair : globalIdsToReceiveFromRank) { int neighborRank = pair.first; if (neighborRank >= 0 && neighborRank < size && neighborRank != rank) { recvCounts[neighborRank] = 0; recvCountBuffers[neighborRank] = 0; MPI_Request req = MPI_REQUEST_NULL; MPI_Irecv(&recvCountBuffers[neighborRank], 1, MPI_INT, neighborRank, MPI_TAG_COUNT + neighborRank, MPI_COMM_WORLD, &req); if (req != MPI_REQUEST_NULL) countRecvRequests.push_back(req); } }
-        std::map<int, int> sendCountBuffers;
-        for (const auto& pair : localIndicesToSendToRank) { int neighborRank = pair.first; const auto& localIndicesSet = pair.second; if (neighborRank >= 0 && neighborRank < size && neighborRank != rank) { sendCounts[neighborRank] = localIndicesSet.size(); sendCountBuffers[neighborRank] = sendCounts[neighborRank]; MPI_Request req = MPI_REQUEST_NULL; MPI_Isend(&sendCountBuffers[neighborRank], 1, MPI_INT, neighborRank, MPI_TAG_COUNT + rank, MPI_COMM_WORLD, &req); if (req != MPI_REQUEST_NULL) countSendRequests.push_back(req); } }
-        if (!countRecvRequests.empty()) { MPI_Waitall(countRecvRequests.size(), countRecvRequests.data(), MPI_STATUSES_IGNORE); for(auto const& [nRank, bufferVal] : recvCountBuffers) { recvCounts[nRank] = bufferVal; } }
+        for (const auto& pair_gids : globalIdsToReceiveFromRank) { int neighborRank = pair_gids.first; if (neighborRank >= 0 && neighborRank < size && neighborRank != rank) { recvCounts[neighborRank] = 0; recvCountBuffers[neighborRank] = 0; MPI_Request req = MPI_REQUEST_NULL; MPI_Irecv(&recvCountBuffers[neighborRank], 1, MPI_INT, neighborRank, MPI_TAG_COUNT + neighborRank, MPI_COMM_WORLD, &req); if (req != MPI_REQUEST_NULL) countRecvRequests.push_back(req); } }
+        std::map<int, int> sendCountBuffers_map;
+        for (const auto& pair_lids : localIndicesToSendToRank) { int neighborRank = pair_lids.first; const auto& localIndicesSet = pair_lids.second; if (neighborRank >= 0 && neighborRank < size && neighborRank != rank) { sendCounts[neighborRank] = localIndicesSet.size(); sendCountBuffers_map[neighborRank] = sendCounts[neighborRank]; MPI_Request req = MPI_REQUEST_NULL; MPI_Isend(&sendCountBuffers_map[neighborRank], 1, MPI_INT, neighborRank, MPI_TAG_COUNT + rank, MPI_COMM_WORLD, &req); if (req != MPI_REQUEST_NULL) countSendRequests.push_back(req); } }
+        if (!countRecvRequests.empty()) { MPI_Waitall(countRecvRequests.size(), countRecvRequests.data(), MPI_STATUSES_IGNORE); for(auto const& pair_rcvbuf : recvCountBuffers) { recvCounts[pair_rcvbuf.first] = pair_rcvbuf.second; } }
         if (!countSendRequests.empty()) { MPI_Waitall(countSendRequests.size(), countSendRequests.data(), MPI_STATUSES_IGNORE); }
-        std::vector<MPI_Request> dataSendRequests, dataRecvRequests;
-        std::map<int, std::vector<double>> sendDataBuffers; std::map<int, std::vector<double>> recvDataBuffers;
-        std::unordered_map<int, SIRCell> ghostCellData;
-        for (const auto& pair : recvCounts) { int neighborRank = pair.first; int count = pair.second; if (count > 0) { int expectedDoubles = count * DOUBLES_PER_CELL; recvDataBuffers[neighborRank].resize(expectedDoubles); MPI_Request req = MPI_REQUEST_NULL; MPI_Irecv(recvDataBuffers[neighborRank].data(), expectedDoubles, MPI_DOUBLE, neighborRank, MPI_TAG_DATA + neighborRank, MPI_COMM_WORLD, &req); if (req != MPI_REQUEST_NULL) dataRecvRequests.push_back(req); } }
-        for (const auto& pair : localIndicesToSendToRank) { int neighborRank = pair.first; const auto& localIndicesSet = pair.second; if (sendCounts.count(neighborRank) && sendCounts[neighborRank] > 0) { int countToSend = sendCounts[neighborRank]; int expectedDoubles = countToSend * DOUBLES_PER_CELL; sendDataBuffers[neighborRank].reserve(expectedDoubles); for (int localIndex : localIndicesSet) { if (localIndex >= 0 && static_cast<size_t>(localIndex) < grid.size()) { const SIRCell& cell = grid[localIndex]; sendDataBuffers[neighborRank].push_back(cell.getS()); sendDataBuffers[neighborRank].push_back(cell.getI()); sendDataBuffers[neighborRank].push_back(cell.getR()); } else { std::cerr << "FATAL Error: Rank " << rank << " Invalid local index " << localIndex << std::endl; MPI_Abort(MPI_COMM_WORLD, 1); } } if (sendDataBuffers[neighborRank].size() != static_cast<size_t>(expectedDoubles)) { std::cerr << "FATAL Error: Rank " << rank << " Send buffer size mismatch rank " << neighborRank << std::endl; MPI_Abort(MPI_COMM_WORLD, 1); } MPI_Request req = MPI_REQUEST_NULL; MPI_Isend(sendDataBuffers[neighborRank].data(), expectedDoubles, MPI_DOUBLE, neighborRank, MPI_TAG_DATA + rank, MPI_COMM_WORLD, &req); if (req != MPI_REQUEST_NULL) dataSendRequests.push_back(req); } }
-        if (!dataRecvRequests.empty()) { MPI_Waitall(dataRecvRequests.size(), dataRecvRequests.data(), MPI_STATUSES_IGNORE); for (auto& pair : recvDataBuffers) { int neighborRank = pair.first; auto& buffer = pair.second; if (!globalIdsToReceiveFromRank.count(neighborRank)) continue; const auto& expectedGlobalIdsSet = globalIdsToReceiveFromRank.at(neighborRank); std::vector<int> expectedGlobalIds(expectedGlobalIdsSet.begin(), expectedGlobalIdsSet.end()); if (buffer.size() != static_cast<size_t>(recvCounts[neighborRank] * DOUBLES_PER_CELL)) { std::cerr << "FATAL Error: Rank " << rank << " Received data size mismatch rank " << neighborRank << std::endl; MPI_Abort(MPI_COMM_WORLD, 1); } if (expectedGlobalIds.size() != static_cast<size_t>(recvCounts[neighborRank])) { std::cerr << "FATAL Error: Rank " << rank << " Mismatch #IDs rank " << neighborRank << std::endl; MPI_Abort(MPI_COMM_WORLD, 1); } for (size_t i = 0; i < expectedGlobalIds.size(); ++i) { int globalId = expectedGlobalIds[i]; size_t bufferIdx = i * DOUBLES_PER_CELL; if (bufferIdx + 2 < buffer.size()) { double s_val = buffer[bufferIdx + 0]; double i_val = buffer[bufferIdx + 1]; double r_val = buffer[bufferIdx + 2]; ghostCellData[globalId] = SIRCell(s_val, i_val, r_val); } else { std::cerr << "FATAL Error: Rank " << rank << " Buffer read index OOB rank " << neighborRank << std::endl; MPI_Abort(MPI_COMM_WORLD, 1); } } } }
-        if (!dataSendRequests.empty()) { MPI_Waitall(dataSendRequests.size(), dataSendRequests.data(), MPI_STATUSES_IGNORE); }
+        
+        std::vector<MPI_Request> dataSendRequests_inloop, dataRecvRequests_inloop;
+        std::map<int, std::vector<double>> sendDataBuffers_inloop;
+        std::map<int, std::vector<double>> recvDataBuffers_inloop;
+        std::unordered_map<int, SIRCell> ghostCellData_inloop;
+
+        for (const auto& pair_rcounts : recvCounts) { int neighborRank = pair_rcounts.first; int count = pair_rcounts.second; if (count > 0) { int expectedDoubles = count * DOUBLES_PER_CELL; recvDataBuffers_inloop[neighborRank].resize(expectedDoubles); MPI_Request req = MPI_REQUEST_NULL; MPI_Irecv(recvDataBuffers_inloop[neighborRank].data(), expectedDoubles, MPI_DOUBLE, neighborRank, MPI_TAG_DATA + neighborRank, MPI_COMM_WORLD, &req); if (req != MPI_REQUEST_NULL) dataRecvRequests_inloop.push_back(req); } }
+        for (const auto& pair_srank : localIndicesToSendToRank) { int neighborRank = pair_srank.first; const auto& localIndicesSet = pair_srank.second; if (sendCounts.count(neighborRank) && sendCounts[neighborRank] > 0) { int countToSend = sendCounts[neighborRank]; int expectedDoubles = countToSend * DOUBLES_PER_CELL; sendDataBuffers_inloop[neighborRank].reserve(expectedDoubles); for (int localIndex_send : localIndicesSet) { if (localIndex_send >= 0 && static_cast<size_t>(localIndex_send) < grid.size()) { const SIRCell& cell_to_send = grid[localIndex_send]; sendDataBuffers_inloop[neighborRank].push_back(cell_to_send.getS()); sendDataBuffers_inloop[neighborRank].push_back(cell_to_send.getI()); sendDataBuffers_inloop[neighborRank].push_back(cell_to_send.getR()); } else { std::cerr << "FATAL Error: Rank " << rank << " Invalid local index " << localIndex_send << " during send prep."<< std::endl; MPI_Abort(MPI_COMM_WORLD, 1); } } if (sendDataBuffers_inloop[neighborRank].size() != static_cast<size_t>(expectedDoubles)) { std::cerr << "FATAL Error: Rank " << rank << " Send buffer size mismatch rank " << neighborRank << std::endl; MPI_Abort(MPI_COMM_WORLD, 1); } MPI_Request req = MPI_REQUEST_NULL; MPI_Isend(sendDataBuffers_inloop[neighborRank].data(), expectedDoubles, MPI_DOUBLE, neighborRank, MPI_TAG_DATA + rank, MPI_COMM_WORLD, &req); if (req != MPI_REQUEST_NULL) dataSendRequests_inloop.push_back(req); } }
+        if (!dataRecvRequests_inloop.empty()) { MPI_Waitall(dataRecvRequests_inloop.size(), dataRecvRequests_inloop.data(), MPI_STATUSES_IGNORE); for (auto& pair_datarcv : recvDataBuffers_inloop) { int neighborRank = pair_datarcv.first; auto& buffer = pair_datarcv.second; if (!globalIdsToReceiveFromRank.count(neighborRank)) continue; const auto& expectedGlobalIdsSet = globalIdsToReceiveFromRank.at(neighborRank); std::vector<int> expectedGlobalIds(expectedGlobalIdsSet.begin(), expectedGlobalIdsSet.end()); if (buffer.size() != static_cast<size_t>(recvCounts[neighborRank] * DOUBLES_PER_CELL)) { std::cerr << "FATAL Error: Rank " << rank << " Received data size mismatch rank " << neighborRank << std::endl; MPI_Abort(MPI_COMM_WORLD, 1); } if (expectedGlobalIds.size() != static_cast<size_t>(recvCounts[neighborRank])) { std::cerr << "FATAL Error: Rank " << rank << " Mismatch #IDs rank " << neighborRank << std::endl; MPI_Abort(MPI_COMM_WORLD, 1); } for (size_t i_unpack = 0; i_unpack < expectedGlobalIds.size(); ++i_unpack) { int globalId_unpack = expectedGlobalIds[i_unpack]; size_t bufferIdx = i_unpack * DOUBLES_PER_CELL; if (bufferIdx + 2 < buffer.size()) { double s_val = buffer[bufferIdx + 0]; double i_val = buffer[bufferIdx + 1]; double r_val = buffer[bufferIdx + 2]; ghostCellData_inloop[globalId_unpack] = SIRCell(s_val, i_val, r_val); } else { std::cerr << "FATAL Error: Rank " << rank << " Buffer read index OOB rank " << neighborRank << std::endl; MPI_Abort(MPI_COMM_WORLD, 1); } } } }
+        if (!dataSendRequests_inloop.empty()) { MPI_Waitall(dataSendRequests_inloop.size(), dataSendRequests_inloop.data(), MPI_STATUSES_IGNORE); }
+        this_rank_total_mpi_comm_time += TimingUtils::stopTimer(mpiCommStartTime_step);
+
+
+        // --- 3. Local Computation ---
+        double localCompStartTime_step = TimingUtils::startTimer();
         std::vector<SIRCell> newGrid(grid.size());
-        for (size_t localIndex = 0; localIndex < grid.size(); ++localIndex) { const SIRCell& currentCell = grid[localIndex]; int globalId = localIndexToGlobalId[localIndex]; std::vector<SIRCell> neighborsForUpdate; if (cellNeighborMap.count(globalId)) { const std::vector<int>& neighborGlobalIds = cellNeighborMap.at(globalId); neighborsForUpdate.reserve(neighborGlobalIds.size()); for (int neighborGlobalId : neighborGlobalIds) { auto it_local = globalToLocalCellIndex.find(neighborGlobalId); if (it_local != globalToLocalCellIndex.end()) { neighborsForUpdate.push_back(grid[it_local->second]); } else { auto it_ghost = ghostCellData.find(neighborGlobalId); if (it_ghost != ghostCellData.end()) { neighborsForUpdate.push_back(it_ghost->second); } } } } newGrid[localIndex] = model.rk4StepWithNeighbors(currentCell, neighborsForUpdate); }
+        for (size_t localIndex = 0; localIndex < grid.size(); ++localIndex) {
+            const SIRCell& currentCell = grid[localIndex];
+            int globalId = localIndexToGlobalId[localIndex];
+            if (globalId == -1) {
+                newGrid[localIndex] = currentCell;
+                if (!grid.empty()) std::cerr << "Rank " << rank << " Warning: Invalid globalId (-1) for localIndex " << localIndex << " in computation step " << step_loop_idx << std::endl;
+                continue;
+            }
+            std::vector<SIRCell> neighborsForUpdate;
+            if (cellNeighborMap.count(globalId)) {
+                const std::vector<int>& neighborGlobalIds = cellNeighborMap.at(globalId);
+                neighborsForUpdate.reserve(neighborGlobalIds.size());
+                for (int neighborGlobalId : neighborGlobalIds) {
+                    auto it_local = globalToLocalCellIndex.find(neighborGlobalId);
+                    if (it_local != globalToLocalCellIndex.end()) {
+                        neighborsForUpdate.push_back(grid[it_local->second]);
+                    } else {
+                         auto it_ghost = ghostCellData_inloop.find(neighborGlobalId);
+                         if (it_ghost != ghostCellData_inloop.end()) {
+                            neighborsForUpdate.push_back(it_ghost->second);
+                         }
+                    }
+                }
+            }
+            newGrid[localIndex] = model.rk4StepWithNeighbors(currentCell, neighborsForUpdate);
+        }
+        // Apply normalization as part of the computation step (from your updateGridNew)
+        for (auto& cell : newGrid) {
+            double sum_sir = cell.getS() + cell.getI() + cell.getR();
+            if (sum_sir > 1e-9) {
+                cell.setS(cell.getS() / sum_sir);
+                cell.setI(cell.getI() / sum_sir);
+                cell.setR(cell.getR() / sum_sir);
+            } else {
+                cell.setS(1.0); cell.setI(0.0); cell.setR(0.0);
+            }
+        }
         grid = std::move(newGrid);
-        double sumS = 0, sumI = 0, sumR = 0; if (!grid.empty()) { for (const auto& cell : grid) { sumS += cell.getS(); sumI += cell.getI(); sumR += cell.getR(); } sumS /= grid.size(); sumI /= grid.size(); sumR /= grid.size(); } double timeVal = static_cast<double>(step + 1) * model.getDt(); localResults.push_back({timeVal, sumS, sumI, sumR});
-        if (size > 1) { MPI_Barrier(MPI_COMM_WORLD); }
-    }
+        this_rank_total_local_computation_time += TimingUtils::stopTimer(localCompStartTime_step);
+
+        // Record local results
+        double sumS=0,sumI=0,sumR=0;
+        if(!grid.empty()){
+            for(const auto&c:grid){sumS+=c.getS();sumI+=c.getI();sumR+=c.getR();}
+            sumS/=grid.size();sumI/=grid.size();sumR/=grid.size();
+        }
+        double timeVal=static_cast<double>(step_loop_idx + 1)*model.getDt();
+        localResults.push_back({timeVal,sumS,sumI,sumR});
+
+        if (size > 1) {
+             MPI_Barrier(MPI_COMM_WORLD); // End of step synchronization
+        }
+    } // End simulation loop
+
+    // --- Print AND LOG Accumulated Computation Timings for THIS RANK ---
+    TimingUtils::printAndLogIndividualRankTime("Total_MPI_Prep_In_Loop", this_rank_total_mpi_prep_time, rank);
+    TimingUtils::printAndLogIndividualRankTime("Total_MPI_Comm_In_Loop", this_rank_total_mpi_comm_time, rank);
+    TimingUtils::printAndLogIndividualRankTime("Total_Local_Computation", this_rank_total_local_computation_time, rank);
+
+
+    // --- Overall Simulation Time (Print summary from Rank 0 AND LOG IT) ---
+    double totalSimWallTime_duration_local = TimingUtils::stopTimer(totalSimulationWallTime_Start);
+    TimingUtils::printAndLogTimingSummary("runSimulation_TotalWallTime", totalSimWallTime_duration_local, rank, size);
+
     std::cout << "Rank " << rank << " finished simulation loop." << std::endl;
-    return localResults; // Make sure return is here
+    return localResults;
 }
 
 void GridSimulation::setNeighborMap(const std::unordered_map<int, std::vector<int>>& map) {
