@@ -229,3 +229,26 @@ To clean up build artifacts (e.g., object files and the executable), run:
 make clean
 ```
 This will remove all files in the `output` directory and the compiled executable.
+
+
+
+--
+
+## Acknowledgements
+
+We are deeply grateful to **Professor [Serena Curzel](https://www.linkedin.com/in/serena-curzel/)** and **Professor [Marco Gribaudo](https://www.linkedin.com/in/marco-gribaudo-41a327b3/)** for proposing the project idea and offering their continuous support and guidance throughout its development.
+
+This hands-on challenge was part of the final exam for the course Advanced Methods for Scientific Computing in High-Performance Computing (2024/25) at Politecnico di Milano.
+
+We also thank **Professor [Luca Formaggia](https://formaggia.faculty.polimi.it/)** for his exceptional teaching and mentorship throughout the course.
+
+
+---
+
+## Contributors
+
+- [Salvatore Mariano Librici](https://www.linkedin.com/in/salvatore-mariano-librici/)
+- [Nadah Khaled](https://www.linkedin.com/in/nadahkhaledd10/)
+- [Milica Sanjevic](https://www.linkedin.com/in/milica-sanjevic-321392327/)
+- [Hirdesh Kumar](https://www.linkedin.com/in/hirdeshkumar2407/)
+- [Yibo Li](https://www.linkedin.com/in/yibo-li-0b0b792a2/)
