@@ -47,6 +47,7 @@ public:
 private:
     int rank;
     int size;
+    
 };
 
 #endif // MPI_HANDLER_H

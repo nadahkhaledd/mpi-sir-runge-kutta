@@ -101,6 +101,8 @@ std::map<std::string, int> GridSimulation::createCellsMap() {
     return cells;
 }
 
+
+
 std::map<int, std::list<int>> GridSimulation::divideIntoBlocks(
     const std::map<std::string, int>& cells, int numBlocks) {
     std::map<int, std::list<int>> blocks;

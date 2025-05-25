@@ -12,16 +12,21 @@
 #include <cstring>
 #include <stdexcept>
 #include <set>
+#include <iomanip>      // For std::fixed, std::setprecision
+#include <string>       // For std::string (not strictly needed for this timing version but good to have)
+#include <algorithm>    // For std::max/min in gatherResults logic, and MPI_MAX
 
 // Constructor: Initialize MPI
 MPIHandler::MPIHandler(int argc, char *argv[]) {
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
+    // std::cout << "Rank " << rank << ": MPI initialized by MPIHandler." << std::endl;
 }
 
 // Destructor: Finalize MPI
 MPIHandler::~MPIHandler() {
+    // std::cout << "Rank " << rank << ": MPIHandler finalizing MPI." << std::endl;
     int finalized_flag;
     MPI_Finalized(&finalized_flag);
     if (!finalized_flag) {
@@ -40,8 +45,12 @@ int MPIHandler::getSize() const {
 
 // gatherResults: Gather [time, avgS, avgI, avgR] from each process
 std::vector<double> MPIHandler::gatherResults(const std::vector<std::vector<double>>& localResults,
-                                              std::vector<int>& outCounts,
-                                              std::vector<int>& outDispls) {
+                                              std::vector<int>& outCounts, // Populated on rank 0
+                                              std::vector<int>& outDispls) { // Populated on rank 0
+    // std::cout << "Rank " << rank << ": MPIHandler::gatherResults called." << std::endl;
+    MPI_Barrier(MPI_COMM_WORLD);
+    double totalPhaseStartTime = MPI_Wtime();
+
     int doublesPerStep = 4;
     int localSteps = localResults.size();
     int localDataSize = localSteps * doublesPerStep;
@@ -57,42 +66,71 @@ std::vector<double> MPIHandler::gatherResults(const std::vector<std::vector<doub
     }
     localDataSize = localFlat.size();
 
+    if (rank == 0) {
+        outCounts.assign(size, 0);
+        outDispls.assign(size, 0);
+    }
     std::vector<int> recvCounts(size);
     std::vector<int> displacements(size);
-    MPI_Gather(&localDataSize, 1, MPI_INT, recvCounts.data(), 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-    std::vector<double> globalFlat;
+    MPI_Barrier(MPI_COMM_WORLD);
+    double gatherSizesStartTime = MPI_Wtime();
+    MPI_Gather(&localDataSize, 1, MPI_INT, recvCounts.data(), 1, MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Barrier(MPI_COMM_WORLD);
     if (rank == 0) {
-        displacements[0] = 0;
-        for (int i = 1; i < size; ++i)
-            displacements[i] = displacements[i - 1] + recvCounts[i - 1];
-        globalFlat.resize(displacements[size - 1] + recvCounts[size - 1]);
+        std::cout << std::fixed << std::setprecision(6) << "TIMING [Rank 0, Phase: gatherResults_GatherSizes]: " << (MPI_Wtime() - gatherSizesStartTime) << "s\n";
     }
 
+    std::vector<double> globalFlat;
+    int totalGlobalSize = 0;
+    if (rank == 0) {
+        displacements[0] = 0;
+        totalGlobalSize = recvCounts[0];
+        for (int i = 1; i < size; ++i) {
+            if (i < static_cast<int>(recvCounts.size()) && (i - 1) < static_cast<int>(recvCounts.size())) {
+                 displacements[i] = displacements[i - 1] + recvCounts[i - 1];
+                 totalGlobalSize += recvCounts[i];
+            }
+        }
+        if (totalGlobalSize > 0) globalFlat.resize(totalGlobalSize);
+    }
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    double gatherVDataStartTime = MPI_Wtime();
     MPI_Gatherv(localFlat.data(), localDataSize, MPI_DOUBLE,
                 globalFlat.data(), recvCounts.data(), displacements.data(), MPI_DOUBLE,
                 0, MPI_COMM_WORLD);
-
-    outCounts = recvCounts;
-    outDispls = displacements;
+    MPI_Barrier(MPI_COMM_WORLD);
+    if (rank == 0) {
+        std::cout << std::fixed << std::setprecision(6) << "TIMING [Rank 0, Phase: gatherResults_GatherVData]: " << (MPI_Wtime() - gatherVDataStartTime) << "s\n";
+    }
 
     if (rank == 0) {
-        for (size_t i = 0; i < globalFlat.size(); i += 4) {
-            double S = globalFlat[i + 1];
-            double I = globalFlat[i + 2];
-            double R = globalFlat[i + 3];
-            double sum = S + I + R;
+        outCounts = recvCounts;
+        outDispls = displacements;
+    }
 
-            if (sum > 0) {
+    if (rank == 0) {
+        double normStartTime = MPI_Wtime();
+        for (size_t i = 0; i < globalFlat.size(); i += 4) {
+            if (i + 3 >= globalFlat.size()) break;
+            double S = globalFlat[i + 1]; double I = globalFlat[i + 2]; double R = globalFlat[i + 3];
+            double sum = S + I + R;
+            if (sum > 1e-9) {
                 globalFlat[i + 1] = std::max(0.0, std::min(1.0, S / sum));
                 globalFlat[i + 2] = std::max(0.0, std::min(1.0, I / sum));
                 globalFlat[i + 3] = std::max(0.0, std::min(1.0, R / sum));
-            } else {
-                globalFlat[i + 1] = 1.0;
-                globalFlat[i + 2] = 0.0;
-                globalFlat[i + 3] = 0.0;
-            }
+            } else { globalFlat[i + 1] = 1.0; globalFlat[i + 2] = 0.0; globalFlat[i + 3] = 0.0; }
         }
+        std::cout << std::fixed << std::setprecision(6) << "TIMING [Rank 0, Phase: gatherResults_Normalization]: " << (MPI_Wtime() - normStartTime) << "s\n";
+    }
+
+    double phaseDuration = MPI_Wtime() - totalPhaseStartTime;
+    double maxDuration;
+    MPI_Reduce(&phaseDuration, &maxDuration, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    MPI_Barrier(MPI_COMM_WORLD); // Ensure reduce is done before print
+    if (rank == 0) {
+        std::cout << std::fixed << std::setprecision(6) << "TIMING [Phase: gatherResults_Total_Max]: " << maxDuration << "s\n";
     }
     return globalFlat;
 }
@@ -101,49 +139,64 @@ std::vector<double> MPIHandler::gatherResults(const std::vector<std::vector<doub
 void MPIHandler::writeResults(const std::vector<double>& globalFlat,
                               const std::vector<int>& recvCounts,
                               const std::vector<int>& displacements) {
+    double ioStartTime = 0.0;
     if (rank == 0) {
-        std::ofstream outfile("./data/simulation_results.csv");
-        if (!outfile) {
-            return;
+        ioStartTime = MPI_Wtime();
+        if (!globalFlat.empty() && (recvCounts.empty() || displacements.empty() || recvCounts.size()!=static_cast<size_t>(size) || displacements.size()!=static_cast<size_t>(size))) {
+             std::cerr << "Rank 0 Error in writeResults: recvCounts/displacements invalid." << std::endl; return;
         }
-
+        std::ofstream outfile("./data/simulation_results.csv");
+        if (!outfile) { std::cerr << "Rank 0 Error: Cannot open ./data/simulation_results.csv" << std::endl; return; }
         outfile << "Rank,Time,S_avg,I_avg,R_avg\n";
         int doublesPerStep = 4;
         for (int proc = 0; proc < size; ++proc) {
-            int startIdx = displacements[proc];
-            int numDoubles = recvCounts[proc];
-            if (numDoubles % doublesPerStep != 0) {
-                continue;
-            }
+            if (proc >= static_cast<int>(displacements.size()) || proc >= static_cast<int>(recvCounts.size())) continue;
+            int startIdx = displacements[proc]; int numDoubles = recvCounts[proc];
+            if (numDoubles < 0 || (numDoubles % doublesPerStep != 0 && numDoubles !=0) ) continue;
+            if (numDoubles == 0) continue;
             int numSteps = numDoubles / doublesPerStep;
             for (int i = 0; i < numSteps; ++i) {
                 int idx = startIdx + i * doublesPerStep;
-                outfile << proc << ","
-                        << globalFlat[idx + 0] << ","
-                        << globalFlat[idx + 1] << ","
-                        << globalFlat[idx + 2] << ","
-                        << globalFlat[idx + 3] << "\n";
+                if (idx + doublesPerStep - 1 < static_cast<int>(globalFlat.size())) {
+                    outfile << proc << "," << globalFlat[idx + 0] << "," << globalFlat[idx + 1] << "," << globalFlat[idx + 2] << "," << globalFlat[idx + 3] << "\n";
+                } else { break; }
             }
         }
         outfile.close();
+        std::cout << "Rank 0: Results written to ./data/simulation_results.csv" << std::endl;
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+    if (rank == 0) {
+        std::cout << std::fixed << std::setprecision(6) << "TIMING [Rank 0, Phase: writeResults_FileIO]: " << (MPI_Wtime() - ioStartTime) << "s\n";
     }
 }
 
 // distributeBlocks: Distributes ONLY block structure (IDs)
 std::map<int, std::list<int>> MPIHandler::distributeBlocks(
     const std::map<int, std::list<int>>& allBlocks) {
-    std::cout << "Rank " << rank << ": Starting block distribution...\n";
+    // std::cout << "Rank " << rank << ": Starting block distribution...\n"; // Moved
+    MPI_Barrier(MPI_COMM_WORLD);
+    double totalPhaseStartTime = MPI_Wtime();
 
     std::map<int, std::list<int>> localBlocks;
     int totalBlocks = 0;
 
+    MPI_Barrier(MPI_COMM_WORLD);
+    double bcastTime = MPI_Wtime();
     if (rank == 0) {
         totalBlocks = allBlocks.size();
-        std::cout << "Rank 0: Distributing " << totalBlocks << " blocks among " << size << " processes.\n";
+        std::cout << "Rank 0 (distributeBlocks): Distributing " << totalBlocks << " blocks among " << size << " processes.\n";
     }
     MPI_Bcast(&totalBlocks, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Barrier(MPI_COMM_WORLD);
+    if (rank == 0) {
+        std::cout << std::fixed << std::setprecision(6) << "TIMING [Rank 0, Phase: distributeBlocks_Bcast_TotalBlocks]: " << (MPI_Wtime() - bcastTime) << "s\n";
+    }
 
     if (totalBlocks == 0) {
+        // std::cout << "Rank " << rank << ": No blocks to distribute." << std::endl; // Moved
+        MPI_Barrier(MPI_COMM_WORLD);
+        if(rank==0) std::cout << std::fixed << std::setprecision(6) << "TIMING [Rank 0, Phase: distributeBlocks_Total_Empty]: " << (MPI_Wtime() - totalPhaseStartTime) << "s\n";
         return localBlocks;
     }
 
@@ -152,80 +205,43 @@ std::map<int, std::list<int>> MPIHandler::distributeBlocks(
     int numMyBlocks = (rank < extraBlocks) ? (blocksPerProc + 1) : blocksPerProc;
     int startBlockIndex = (rank < extraBlocks) ? (rank * (blocksPerProc + 1)) : (rank * blocksPerProc + extraBlocks);
 
+    MPI_Barrier(MPI_COMM_WORLD);
+    double commLoopStartTime = MPI_Wtime();
     if (rank == 0) {
-        int currentBlockIndex = 0;
-        for (const auto& [blockId, cellList] : allBlocks) {
-            if (currentBlockIndex >= startBlockIndex && currentBlockIndex < startBlockIndex + numMyBlocks) {
-                localBlocks[blockId] = cellList;
+        int currentBlockIndex=0;
+        for(const auto& p : allBlocks){
+            if(currentBlockIndex>=startBlockIndex && currentBlockIndex<startBlockIndex+numMyBlocks) { // Corrected typo
+                localBlocks[p.first]=p.second;
             }
             currentBlockIndex++;
         }
-
-        int blockCounter = 0;
-        for (const auto& [blockId, cellList] : allBlocks) {
-            int targetRank = -1;
-            int tempBlocksPerProc = totalBlocks / size;
-            int tempExtraBlocks = totalBlocks % size;
-            for (int r = 0; r < size; ++r) {
-                int rNumBlocks = (r < tempExtraBlocks) ? (tempBlocksPerProc + 1) : tempBlocksPerProc;
-                int rankStartBlockIndex = (r < tempExtraBlocks) ? (r * (tempBlocksPerProc + 1)) : (r * tempBlocksPerProc + tempExtraBlocks);
-                if (blockCounter >= rankStartBlockIndex && blockCounter < rankStartBlockIndex + rNumBlocks) {
-                    targetRank = r;
-                    break;
-                }
-            }
-
-            if (targetRank > 0 && targetRank < size) {
-                std::vector<int> blockData;
-                blockData.push_back(blockId);
-                blockData.push_back(static_cast<int>(cellList.size()));
-                blockData.insert(blockData.end(), cellList.begin(), cellList.end());
-
-                int dataSize = blockData.size();
-                MPI_Send(&dataSize, 1, MPI_INT, targetRank, 0, MPI_COMM_WORLD);
-                if (dataSize > 0) {
-                    MPI_Send(blockData.data(), dataSize, MPI_INT, targetRank, 1, MPI_COMM_WORLD);
-                }
-            }
+        int blockCounter=0;
+        for(const auto& p : allBlocks){
+            int targetRank=-1;
+            for(int r=0;r<size;++r){int rNB=(r<extraBlocks)?(blocksPerProc+1):blocksPerProc;int rS=(r<extraBlocks)?(r*(blocksPerProc+1)):(r*blocksPerProc+extraBlocks); if(blockCounter>=rS && blockCounter<rS+rNB){targetRank=r;break;}}
+            if(targetRank>0 && targetRank<size){std::vector<int>bd;bd.push_back(p.first);bd.push_back(static_cast<int>(p.second.size()));bd.insert(bd.end(),p.second.begin(),p.second.end());int ds=bd.size();MPI_Send(&ds,1,MPI_INT,targetRank,0,MPI_COMM_WORLD);if(ds>0)MPI_Send(bd.data(),ds,MPI_INT,targetRank,1,MPI_COMM_WORLD);}
             blockCounter++;
         }
-
-        int terminateSignal = -1;
-        for (int proc = 1; proc < size; ++proc) {
-            MPI_Send(&terminateSignal, 1, MPI_INT, proc, 0, MPI_COMM_WORLD);
-        }
-
+        int termSig=-1; for(int proc=1;proc<size;++proc)MPI_Send(&termSig,1,MPI_INT,proc,0,MPI_COMM_WORLD);
     } else {
-        while (true) {
-            int dataSize;
-            MPI_Status status;
-            MPI_Recv(&dataSize, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, &status);
-
-            if (dataSize == -1) {
-                break;
-            }
-
-            if (dataSize > 0) {
-                std::vector<int> blockData(dataSize);
-                MPI_Recv(blockData.data(), dataSize, MPI_INT, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-                if (blockData.size() >= 2) {
-                    int blockId = blockData[0];
-                    int numCells = blockData[1];
-                    if (blockData.size() == static_cast<size_t>(2 + numCells)) {
-                        std::list<int> cellList;
-                        for (int i = 0; i < numCells; ++i) {
-                            cellList.push_back(blockData[2 + i]);
-                        }
-                        localBlocks[blockId] = cellList;
-                    }
-                }
-            }
-        }
+        while(true){int ds;MPI_Status st;MPI_Recv(&ds,1,MPI_INT,0,0,MPI_COMM_WORLD,&st);if(ds==-1)break; if(ds>0){std::vector<int>bd(ds);MPI_Recv(bd.data(),ds,MPI_INT,0,1,MPI_COMM_WORLD,MPI_STATUS_IGNORE);if(bd.size()>=2){int bId=bd[0];int nC=bd[1];if(bd.size()==static_cast<size_t>(2+nC)){std::list<int>cl;for(int i=0;i<nC;++i)cl.push_back(bd[2+i]);localBlocks[bId]=cl;}}}}
+    }
+    double commLoopDuration = MPI_Wtime() - commLoopStartTime; // Each rank measures its loop part
+    double maxCommLoopDuration;
+    MPI_Reduce(&commLoopDuration, &maxCommLoopDuration, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    MPI_Barrier(MPI_COMM_WORLD);
+    if (rank == 0) {
+         std::cout << std::fixed << std::setprecision(6) << "TIMING [Phase: distributeBlocks_CommLoop_Max]: " << maxCommLoopDuration << "s\n";
     }
 
+    double totalDuration = MPI_Wtime() - totalPhaseStartTime;
+    double maxTotalDuration;
+    MPI_Reduce(&totalDuration, &maxTotalDuration, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
     MPI_Barrier(MPI_COMM_WORLD);
-    std::cout << "Rank " << rank << ": Finished block distribution. Local blocks: " << localBlocks.size() << "\n";
+    if (rank == 0) {
+        std::cout << std::fixed << std::setprecision(6) << "TIMING [Phase: distributeBlocks_Total_Max]: " << maxTotalDuration << "s\n";
+    }
+    // std::cout << "Rank " << rank << ": Finished block distribution. Local blocks: " << localBlocks.size() << "\n"; // Moved
     return localBlocks;
 }
 
@@ -233,172 +249,150 @@ std::map<int, std::list<int>> MPIHandler::distributeBlocks(
 std::map<int, std::vector<double>> MPIHandler::getDataForLocalBlocks(
     const std::map<int, std::list<int>>& localBlocks,
     const std::vector<std::vector<double>>& fullData) {
-    std::cout << "Rank " << rank << ": Starting data distribution for local blocks...\n";
+    // std::cout << "Rank " << rank << ": Starting data distribution for local blocks...\n"; // Moved
+    MPI_Barrier(MPI_COMM_WORLD);
+    double totalPhaseStartTime = MPI_Wtime();
 
     std::map<int, std::vector<double>> localCellData;
-
     std::set<int> neededCellIdsSet;
     for (const auto& [blockId, cellList] : localBlocks) {
         neededCellIdsSet.insert(cellList.begin(), cellList.end());
     }
     std::vector<int> neededCellIds(neededCellIdsSet.begin(), neededCellIdsSet.end());
 
+    MPI_Barrier(MPI_COMM_WORLD);
+    double gatherRequestsStartTime = MPI_Wtime();
+    std::vector<int> requestSizes(size);
+    std::vector<int> requestDispls(size);
+    std::vector<int> gatheredIdsBuffer;
+
+    int myRequestSize = neededCellIds.size();
+    MPI_Gather(&myRequestSize, 1, MPI_INT, requestSizes.data(), 1, MPI_INT, 0, MPI_COMM_WORLD);
+
     if (rank == 0) {
-        int myRequestSize = neededCellIds.size();
-        std::vector<int> requestSizes(size);
-        MPI_Gather(&myRequestSize, 1, MPI_INT, requestSizes.data(), 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-        std::vector<int> requestDispls(size);
-        int totalRequestedIds = 0;
-        requestDispls[0] = 0;
-        totalRequestedIds = requestSizes[0];
-        for (int i = 1; i < size; ++i) {
-            requestDispls[i] = requestDispls[i - 1] + requestSizes[i - 1];
-            totalRequestedIds += requestSizes[i];
-        }
-
-        std::vector<int> gatheredIdsBuffer(totalRequestedIds);
-        MPI_Gatherv(neededCellIds.data(), myRequestSize, MPI_INT,
-                    gatheredIdsBuffer.data(), requestSizes.data(), requestDispls.data(), MPI_INT,
-                    0, MPI_COMM_WORLD);
-
-        int doublesPerCell = 0;
-        if (!fullData.empty() && !fullData[0].empty()) {
-            doublesPerCell = fullData[0].size();
-        } else if (totalRequestedIds > 0) {
-            MPI_Abort(MPI_COMM_WORLD, 1);
-        }
-
-        std::vector<int> sendDataSizes(size);
-        std::vector<int> sendDataDispls(size);
-        std::vector<double> flatSendDataBuffer;
-
-        int currentSendDispl = 0;
-        for (int targetRank = 0; targetRank < size; ++targetRank) {
-            int startIdx = requestDispls[targetRank];
-            int numIds = requestSizes[targetRank];
-            std::vector<double> rankDataBuffer;
-
-            for (int k = 0; k < numIds; ++k) {
-                int cellId = gatheredIdsBuffer[startIdx + k];
-                if (cellId >= 0 && static_cast<size_t>(cellId) < fullData.size()) {
-                    const auto& rowData = fullData[cellId];
-                    rankDataBuffer.insert(rankDataBuffer.end(), rowData.begin(), rowData.end());
-
-                    if (targetRank == 0) {
-                        localCellData[cellId] = rowData;
-                    }
-                }
-            }
-            sendDataSizes[targetRank] = rankDataBuffer.size();
-            sendDataDispls[targetRank] = currentSendDispl;
-            flatSendDataBuffer.insert(flatSendDataBuffer.end(), rankDataBuffer.begin(), rankDataBuffer.end());
-            currentSendDispl += rankDataBuffer.size();
-        }
-
-        MPI_Bcast(&doublesPerCell, 1, MPI_INT, 0, MPI_COMM_WORLD);
-        MPI_Bcast(sendDataSizes.data(), size, MPI_INT, 0, MPI_COMM_WORLD);
-
-        std::vector<double> localRecvBuffer_Rank0(sendDataSizes[0]);
-        MPI_Scatterv(flatSendDataBuffer.data(), sendDataSizes.data(), sendDataDispls.data(), MPI_DOUBLE,
-                     localRecvBuffer_Rank0.data(), sendDataSizes[0], MPI_DOUBLE,
-                     0, MPI_COMM_WORLD);
-
-    } else {
-        int myRequestSize = neededCellIds.size();
-        MPI_Gather(&myRequestSize, 1, MPI_INT, nullptr, 0, MPI_INT, 0, MPI_COMM_WORLD);
-
-        MPI_Gatherv(neededCellIds.data(), myRequestSize, MPI_INT,
-                    nullptr, nullptr, nullptr, MPI_INT,
-                    0, MPI_COMM_WORLD);
-
-        int doublesPerCell = 0;
-        MPI_Bcast(&doublesPerCell, 1, MPI_INT, 0, MPI_COMM_WORLD);
-        if (doublesPerCell <= 0) {
-            MPI_Abort(MPI_COMM_WORLD, 1);
-        }
-
-        std::vector<int> dataRecvSizes(size);
-        MPI_Bcast(dataRecvSizes.data(), size, MPI_INT, 0, MPI_COMM_WORLD);
-
-        int myRecvSize = dataRecvSizes[rank];
-        std::vector<double> localRecvBuffer(myRecvSize);
-
-        MPI_Scatterv(nullptr, nullptr, nullptr, MPI_DOUBLE,
-                     localRecvBuffer.data(), myRecvSize, MPI_DOUBLE,
-                     0, MPI_COMM_WORLD);
-
-        if (myRecvSize % doublesPerCell != 0 && myRecvSize != 0) {
-            MPI_Abort(MPI_COMM_WORLD, 1);
-        } else {
-            size_t numCellsReceived = (myRecvSize == 0) ? 0 : static_cast<size_t>(myRecvSize / doublesPerCell);
-            size_t bufferIdx = 0;
-
-            for (size_t i = 0; i < numCellsReceived; ++i) {
-                int cellId = neededCellIds[i];
-                std::vector<double> rowData(localRecvBuffer.begin() + bufferIdx,
-                                            localRecvBuffer.begin() + bufferIdx + doublesPerCell);
-                localCellData[cellId] = rowData;
-                bufferIdx += doublesPerCell;
-            }
-        }
+        int totalRequestedIds = 0; requestDispls[0] = 0; totalRequestedIds = requestSizes[0];
+        for (int i = 1; i < size; ++i) { requestDispls[i] = requestDispls[i-1] + requestSizes[i-1]; totalRequestedIds += requestSizes[i]; }
+        if(totalRequestedIds > 0) gatheredIdsBuffer.resize(totalRequestedIds);
     }
+    MPI_Gatherv(neededCellIds.data(), myRequestSize, MPI_INT,
+                gatheredIdsBuffer.data(), requestSizes.data(), requestDispls.data(), MPI_INT,
+                0, MPI_COMM_WORLD);
+    double gatherReqDuration = MPI_Wtime() - gatherRequestsStartTime;
+    double maxGatherReqDuration; MPI_Reduce(&gatherReqDuration, &maxGatherReqDuration, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    MPI_Barrier(MPI_COMM_WORLD);
+    if(rank==0) std::cout << std::fixed << std::setprecision(6) << "TIMING [Phase: getDataForLocalBlocks_GatherRequests_Max]: " << maxGatherReqDuration << "s\n";
+
 
     MPI_Barrier(MPI_COMM_WORLD);
-    std::cout << "Rank " << rank << ": Received data for " << localCellData.size() << " cells.\n";
+    double dataDistCommStartTime = MPI_Wtime();
+    int doublesPerCell = 0;
+    std::vector<int> sendDataSizes(size);
+
+    if (rank == 0) {
+        bool anyReq=false; for(int s:requestSizes)if(s>0)anyReq=true;
+        if(!fullData.empty() && !fullData[0].empty())doublesPerCell=fullData[0].size();else if(anyReq)MPI_Abort(MPI_COMM_WORLD,1);
+        std::vector<int>sdDispls(size); std::vector<double>flatSDBuf; int currSDispl=0;
+        for(int tr=0;tr<size;++tr){int sIdx=requestDispls[tr];int nIds=requestSizes[tr];std::vector<double>rDBuf;for(int k=0;k<nIds;++k){int cId=gatheredIdsBuffer[sIdx+k];if(cId>=0&&static_cast<size_t>(cId)<fullData.size()){const auto&rd=fullData[cId];if(static_cast<int>(rd.size())!=doublesPerCell&&doublesPerCell>0)MPI_Abort(MPI_COMM_WORLD,1);rDBuf.insert(rDBuf.end(),rd.begin(),rd.end());if(tr==0)localCellData[cId]=rd;}} sendDataSizes[tr]=rDBuf.size();sdDispls[tr]=currSDispl;flatSDBuf.insert(flatSDBuf.end(),rDBuf.begin(),rDBuf.end());currSDispl+=rDBuf.size();}
+        MPI_Bcast(&doublesPerCell, 1, MPI_INT, 0, MPI_COMM_WORLD);
+        MPI_Bcast(sendDataSizes.data(), size, MPI_INT, 0, MPI_COMM_WORLD);
+        std::vector<double>lrBufR0(sendDataSizes[0]>0?sendDataSizes[0]:0);MPI_Scatterv(flatSDBuf.data(),sendDataSizes.data(),sdDispls.data(),MPI_DOUBLE,(sendDataSizes[0]>0?lrBufR0.data():nullptr),sendDataSizes[0],MPI_DOUBLE,0,MPI_COMM_WORLD);
+    } else {
+        MPI_Bcast(&doublesPerCell,1,MPI_INT,0,MPI_COMM_WORLD);if(doublesPerCell<=0&&neededCellIds.size()>0)MPI_Abort(MPI_COMM_WORLD,1);
+        MPI_Bcast(sendDataSizes.data(),size,MPI_INT,0,MPI_COMM_WORLD);int myRS=(rank<static_cast<int>(sendDataSizes.size()))?sendDataSizes[rank]:0;std::vector<double>lrBuf(myRS);MPI_Scatterv(nullptr,nullptr,nullptr,MPI_DOUBLE,(myRS>0?lrBuf.data():nullptr),myRS,MPI_DOUBLE,0,MPI_COMM_WORLD);
+        if(myRS>0){if(doublesPerCell == 0 && myRS > 0) MPI_Abort(MPI_COMM_WORLD,1); if(myRS % doublesPerCell != 0) MPI_Abort(MPI_COMM_WORLD,1);size_t nCRcvd=static_cast<size_t>(myRS/doublesPerCell);size_t bIdx=0;if(neededCellIds.size()<nCRcvd)MPI_Abort(MPI_COMM_WORLD,1);for(size_t i=0;i<nCRcvd;++i){if(bIdx+doublesPerCell>static_cast<size_t>(myRS))MPI_Abort(MPI_COMM_WORLD,1);int cId=neededCellIds[i];std::vector<double>rd(lrBuf.begin()+bIdx,lrBuf.begin()+bIdx+doublesPerCell);localCellData[cId]=rd;bIdx+=doublesPerCell;}}
+    }
+    double dataDistCommDuration = MPI_Wtime() - dataDistCommStartTime;
+    double maxDataDistCommDuration; MPI_Reduce(&dataDistCommDuration, &maxDataDistCommDuration, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    MPI_Barrier(MPI_COMM_WORLD);
+    if(rank==0) std::cout << std::fixed << std::setprecision(6) << "TIMING [Phase: getDataForLocalBlocks_DataDistComm_Max]: " << maxDataDistCommDuration << "s\n";
+
+
+    double totalDuration = MPI_Wtime() - totalPhaseStartTime;
+    double maxTotalDurationData; MPI_Reduce(&totalDuration, &maxTotalDurationData, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    MPI_Barrier(MPI_COMM_WORLD);
+    if(rank==0) std::cout << std::fixed << std::setprecision(6) << "TIMING [Phase: getDataForLocalBlocks_Total_Max]: " << maxTotalDurationData << "s\n";
+    // std::cout << "Rank " << rank << ": Received data for " << localCellData.size() << " cells.\n"; // Moved
     return localCellData;
 }
 
 // broadcastBlockNeighborMap: Broadcasts the block adjacency map
 std::unordered_map<int, std::vector<int>> MPIHandler::broadcastBlockNeighborMap(
     const std::unordered_map<int, std::vector<int>>& mapToSend) {
-    std::cout << "Rank " << rank << ": Broadcasting block neighbor map...\n";
+    // std::cout << "Rank " << rank << ": Broadcasting block neighbor map...\n"; // Moved
+    MPI_Barrier(MPI_COMM_WORLD);
+    double totalPhaseStartTime = MPI_Wtime();
 
     long long totalBytes = 0;
     std::vector<char> buffer;
     if (rank == 0) {
-        std::vector<int> flatIntBuffer;
-        flatIntBuffer.push_back(static_cast<int>(mapToSend.size()));
-        for (const auto& [key, vec] : mapToSend) {
-            flatIntBuffer.push_back(key);
-            flatIntBuffer.push_back(static_cast<int>(vec.size()));
-            flatIntBuffer.insert(flatIntBuffer.end(), vec.begin(), vec.end());
-        }
+        std::vector<int> flatIntBuffer; flatIntBuffer.push_back(static_cast<int>(mapToSend.size()));
+        for (const auto& [key, vec] : mapToSend) { flatIntBuffer.push_back(key); flatIntBuffer.push_back(static_cast<int>(vec.size())); flatIntBuffer.insert(flatIntBuffer.end(), vec.begin(), vec.end()); }
         totalBytes = static_cast<long long>(flatIntBuffer.size()) * sizeof(int);
-        buffer.resize(totalBytes);
-        if (totalBytes > 0) {
-            memcpy(buffer.data(), flatIntBuffer.data(), totalBytes);
-        }
+        if(totalBytes > 0) buffer.resize(totalBytes);
+        if (totalBytes > 0) memcpy(buffer.data(), flatIntBuffer.data(), totalBytes);
     }
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    double bcastCommStartTime = MPI_Wtime();
     MPI_Bcast(&totalBytes, 1, MPI_LONG_LONG_INT, 0, MPI_COMM_WORLD);
-    if (totalBytes == 0) {
-        return (rank == 0) ? mapToSend : std::unordered_map<int, std::vector<int>>{};
-    }
-    if (rank != 0) {
-        buffer.resize(totalBytes);
-    }
     if (totalBytes > 0) {
+        if (rank != 0) buffer.resize(totalBytes);
         MPI_Bcast(buffer.data(), totalBytes, MPI_BYTE, 0, MPI_COMM_WORLD);
     }
+    double bcastCommDuration = MPI_Wtime() - bcastCommStartTime;
+    double maxBcastCommDuration; MPI_Reduce(&bcastCommDuration, &maxBcastCommDuration, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    MPI_Barrier(MPI_COMM_WORLD);
+    if(rank==0) std::cout << std::fixed << std::setprecision(6) << "TIMING [Phase: bcastBlockNeighborMap_BcastComm_Max]: " << maxBcastCommDuration << "s\n";
+
+
+    if (totalBytes == 0) {
+        // std::cout << "Rank " << rank << ": broadcastBlockNeighborMap totalBytes is 0." << std::endl; // Moved
+        MPI_Barrier(MPI_COMM_WORLD);
+        if(rank==0) std::cout << std::fixed << std::setprecision(6) << "TIMING [Rank 0, Phase: bcastBlockNeighborMap_Total_Empty]: " << (MPI_Wtime() - totalPhaseStartTime) << "s\n";
+        return (rank == 0) ? mapToSend : std::unordered_map<int, std::vector<int>>{};
+    }
+
     std::unordered_map<int, std::vector<int>> receivedMap;
-    if (rank != 0) {
+    if (rank != 0 && totalBytes > 0) { // Deserialization only for other ranks if data exists
+        if (totalBytes < 0 || totalBytes % sizeof(int) != 0) MPI_Abort(MPI_COMM_WORLD,1);
         size_t numInts = static_cast<size_t>(totalBytes) / sizeof(int);
         std::vector<int> flatIntBuffer(numInts);
         if (totalBytes > 0) memcpy(flatIntBuffer.data(), buffer.data(), totalBytes);
-        int numEntries = flatIntBuffer[0];
-        size_t currentIndex = 1;
-        receivedMap.reserve(numEntries);
-        for (int i = 0; i < numEntries; ++i) {
-            int key = flatIntBuffer[currentIndex++];
-            int numNeighbors = flatIntBuffer[currentIndex++];
-            std::vector<int> neighbors;
-            if (numNeighbors > 0) {
-                neighbors.assign(flatIntBuffer.begin() + currentIndex, flatIntBuffer.begin() + currentIndex + numNeighbors);
-                currentIndex += numNeighbors;
+        if (numInts == 0 && totalBytes > 0) MPI_Abort(MPI_COMM_WORLD,1);
+        if (numInts > 0) {
+            int numEntries = flatIntBuffer[0]; if (numEntries < 0) MPI_Abort(MPI_COMM_WORLD,1);
+            size_t currentIndex = 1; receivedMap.reserve(numEntries);
+            for (int i = 0; i < numEntries; ++i) {
+                if (currentIndex + 1 >= numInts) { // Check for key and numNeighbors count
+                     std::cerr << "Rank " << rank << " Error: Buffer OOB reading key/count for entry " << i << ". Idx=" << currentIndex << ", Size=" << numInts << std::endl;
+                     MPI_Abort(MPI_COMM_WORLD,1);
+                }
+                int key = flatIntBuffer[currentIndex++];
+                int numNeighbors = flatIntBuffer[currentIndex++];
+
+                if (numNeighbors < 0) {
+                    std::cerr << "Rank " << rank << " Error: Negative numNeighbors " << numNeighbors << " for key " << key << std::endl;
+                    MPI_Abort(MPI_COMM_WORLD,1);
+                }
+                if (currentIndex + static_cast<size_t>(numNeighbors) > numInts) { // Cast numNeighbors for comparison
+                    std::cerr << "Rank " << rank << " Error: Buffer overrun reading neighbors for key " << key << ". Need " << numNeighbors << ", Avail " << numInts - currentIndex << std::endl;
+                    MPI_Abort(MPI_COMM_WORLD,1);
+                }
+                std::vector<int> neighbors;
+                if (numNeighbors > 0) {
+                    neighbors.assign(flatIntBuffer.begin() + currentIndex, flatIntBuffer.begin() + currentIndex + numNeighbors);
+                    currentIndex += numNeighbors;
+                }
+                receivedMap[key] = std::move(neighbors);
             }
-            receivedMap[key] = std::move(neighbors);
+            if (currentIndex != numInts) {
+                 std::cerr << "Rank " << rank << " Warning: Did not consume entire buffer in broadcastBlockNeighborMap. Index=" << currentIndex << ", Size=" << numInts << std::endl;
+            }
         }
     }
-    std::cout << "Rank " << rank << ": Received block neighbor map with " << receivedMap.size() << " entries.\n";
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    if(rank==0) std::cout << std::fixed << std::setprecision(6) << "TIMING [Rank 0, Phase: bcastBlockNeighborMap_Total]: " << (MPI_Wtime() - totalPhaseStartTime) << "s\n";
+    // std::cout << "Rank " << rank << ": Received block neighbor map with " << ((rank == 0) ? mapToSend.size() : receivedMap.size()) << " entries.\n"; // Moved
     return (rank == 0) ? mapToSend : receivedMap;
 }
