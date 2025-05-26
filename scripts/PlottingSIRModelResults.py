@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib import animation
@@ -230,13 +231,72 @@ def plot_peak_infection_times(df):
     print("Saved: peak_infection_time_per_rank.png")
 
 # -----------------------------
+# Plot 8: Timing Comparison Across Simulation Phases
+# -----------------------------
+def plot_timing_comparison_phases(timing_df, output_dir="./plots"):
+    """
+    Generates a bar plot comparing Min, Max, and Avg times
+    across simulation phases.
+
+    Parameters:
+    - timing_df: DataFrame with 'PhaseName', 'Statistic', and 'Value' columns.
+    - output_dir: Directory where the plot will be saved.
+    """
+    df_general = timing_df[timing_df['Statistic'].isin(['Min', 'Max', 'Avg'])]
+
+    plt.figure(figsize=(12, 6))
+    sns.barplot(data=df_general, x="PhaseName", y="Value", hue="Statistic")
+    plt.title("Timing Comparison Across Simulation Phases")
+    plt.ylabel("Time (s)")
+    plt.xticks(rotation=45, ha='right')
+    plt.grid(True, axis='y')
+    plt.tight_layout()
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = os.path.join(output_dir, "timing_comparison_phases.png")
+    plt.savefig(output_path)
+    print(f"Saved: {output_path}")
+    plt.close()
+
+
+# -----------------------------
+# Plot 9: Rank_0_Time by Phase
+# -----------------------------
+def plot_rank0_time_phases(timing_df, output_dir="./plots"):
+    """
+    Bar chart showing Rank_0_Time across simulation phases.
+    """
+    df_rank0 = timing_df[timing_df['Statistic'] == 'Rank_0_Time']
+
+    plt.figure(figsize=(10, 5))
+    sns.barplot(data=df_rank0, x="PhaseName", y="Value", color="skyblue")
+    plt.title("Rank_0_Time Across MPI and Computation Phases")
+    plt.ylabel("Time (s)")
+    plt.xticks(rotation=45, ha='right')
+    plt.grid(True, axis='y')
+    plt.tight_layout()
+    output_path = os.path.join(output_dir, "rank0_time_phases.png")
+    plt.savefig(output_path)
+    print(f"Saved: {output_path}")
+    plt.close()
+
+
+# -----------------------------
 # Run all plots
 # -----------------------------
 if __name__ == "__main__":
-    filename = "./data/simulation_results.csv"
-    df = load_simulation_data(filename)
 
+    # Define file paths
+    sim_data_file = "./data/simulation_results.csv"
+    timing_log_file = "./data/timing_log.csv"
+    output_dir = "./plots"
+
+    # Ensure output directory exists
+    os.makedirs(output_dir, exist_ok=True)
+
+    # --- Load and plot simulation data ---
+    df = load_simulation_data(sim_data_file)
     if df is not None:
+        print("Generating SIR and infection plots...")
         plot_sir_per_rank(df)
         plot_stacked_area_per_rank(df)
         plot_sir_global_line(df)
@@ -244,10 +304,16 @@ if __name__ == "__main__":
         plot_infection_heatmap_per_rank(df)
         animate_infection(df)
         plot_peak_infection_times(df)
-        print("All plots generated successfully.")
+        print("Simulation plots generated successfully.")
     else:
-        print("Failed to load data. No plots generated.")
+        print("Simulation data not found. Skipping simulation plots.")
 
-# -----------------------------
-# End of script
-# -----------------------------
+    # --- Load and plot timing data ---
+    if os.path.exists(timing_log_file):
+        timing_df = pd.read_csv(timing_log_file)
+        print("Generating timing analysis plots...")
+        plot_timing_comparison_phases(timing_df, output_dir)
+        plot_rank0_time_phases(timing_df, output_dir)
+        print("Timing plots generated successfully.")
+    else:
+        print("Timing log not found. Skipping timing plots.")
