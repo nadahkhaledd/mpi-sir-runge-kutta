@@ -32,7 +32,6 @@ Before using a CSV file in the simulation:
 │   ├── test_results           # Test outputs
 │   ├── analysis              # Analysis plots and metrics
 │   └── test_datasets         # Raw CSVs for testing
-├── docs                      # Documentation files
 ├── scripts                   # Python scripts for analysis and plotting
 └── src                       # C++ source code
     ├── main.cpp              # Main simulation file
@@ -174,19 +173,13 @@ python scripts/analyze_results.py
 ### SIR Model Equations
 The SIR model is based on the following set of differential equations:
 
-\[
-\begin{align*}
-\frac{dS}{dt} &= -\beta \frac{SI}{N} \\
-\frac{dI}{dt} &= \beta \frac{SI}{N} - \gamma I \\
-\frac{dR}{dt} &= \gamma I
-\end{align*}
-\]
+<img src="https://latex.codecogs.com/svg.latex?\begin{align*}%20\frac{dS}{dt}%20&=%20-\beta%20\frac{SI}{N}%20\\%20\frac{dI}{dt}%20&=%20\beta%20\frac{SI}{N}%20-%20\gamma%20I%20\\%20\frac{dR}{dt}%20&=%20\gamma%20I%20\end{align*}" />
 
 where:
-- \(S\), \(I\), and \(R\) are the numbers of susceptible, infected, and recovered individuals, respectively.
-- \(N\) is the total population size (assumed constant).
-- \(\beta\) is the transmission rate.
-- \(\gamma\) is the recovery rate.
+- S, I, and R are the numbers of susceptible, infected, and recovered individuals
+- N is the total population size (assumed constant)
+- β (beta) is the transmission rate
+- γ (gamma) is the recovery rate
 
 ### Parameter Tuning
 Parameters are tuned based on:
