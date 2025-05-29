@@ -1,32 +1,158 @@
 # 🦠 SIR Simulation with MPI
+
 This project implements a parallel SIR (Susceptible-Infected-Recovered) model using MPI to simulate the spread of infectious diseases across a grid of cells. Each cell represents a population unit, and the simulation evolves over discrete time steps.
 
----
+## Prerequisites & Installation
+
+### Required Libraries
+1. MPI Implementation
+   ```bash
+   # Ubuntu/Debian
+   sudo apt-get update
+   sudo apt-get install openmpi-bin libopenmpi-dev
+
+   # CentOS/RHEL
+   sudo yum install openmpi openmpi-devel
+   ```
+
+2. C++ Compiler (C++17 or later)
+   ```bash
+   sudo apt-get install g++
+   ```
+
+3. Python 3.x & Libraries
+   ```bash
+   sudo apt-get install python3 python3-pip
+   pip3 install pandas matplotlib numpy
+   ```
 
 ## 📁 Project Structure
-
+```
 ├── src/  
-│   ├── SIRCell.cpp / .h         # Represents an individual cell in the grid (SIR logic per cell)  
-│   ├── SIRModel.cpp / .h        # Manages the logic for the overall SIR simulation model  
-│   ├── GridSimulation.cpp / .h  # Handles the 2D grid of cells and their interactions  
-│   ├── MPIHandler.cpp / .h      # Manages MPI communication between processes  
-│   ├── CSVParser.cpp / .h       # Parses input CSV files for initial conditions  
-│   └── main.cpp                 # Entry point; sets up simulation and runs it  
+│   ├── core/
+│   │   ├── SIRCell.cpp/.h        # Individual cell in the grid
+│   │   ├── SIRModel.cpp/.h       # Core SIR simulation model
+│   │   ├── GridSimulation.cpp/.h # 2D grid and cell interactions
+│   │   ├── MPIHandler.cpp/.h     # MPI communication management
+│   │   ├── CSVParser.cpp/.h      # Input data parsing
+│   │   └── SimulationManager.cpp/.h # High-level simulation control
+│   └── tests/                    # Test implementations
 ├── scripts/  
-│   ├── sort_csv_by_states.py    # Script to preprocess and sort input CSV data by US states  
-│   └── PlottingSIRModelResults.py # Script to plot the simulation results  
+│   ├── clean_sort_dataset.py     # Data preprocessing
+│   └── PlottingSIRModelResults.py # Result visualization
 ├── data/  
-│   ├── initial_conditions.csv   # Input data for the simulation  
-│   └── sorted_initial_conditions.csv # Preprocessed and sorted input data  
-├── output/                      # Directory for simulation output  
-├── Makefile                     # Build instructions  
-└── README.md                    # This file
+│   ├── test_datasets/           # Test input files
+│   │   └── README.md            # Test data documentation
+│   ├── test_results/           # Test output files
+│   └── output/                 # Main simulation output
+└── Readme.MD                   # This file
+```
 
----
+## Building & Running
 
-## 🧠 Key Tasks and How They Are Done
+### Main Simulation
+```bash
+# Build
+make clean
+make simulation
 
-### 1️⃣ Dividing the Data
+# Run (e.g., with 4 processes)
+mpirun -np 4 ./sir_simulation
+```
+
+### Test Suite
+```bash
+# Build tests
+make clean
+make test
+
+# Run tests (e.g., with 4 processes)
+mpirun -np 4 ./sir_test_suite
+```
+
+### Data Preprocessing
+```bash
+# Clean and sort a dataset
+python scripts/clean_sort_dataset.py ./data/test_datasets/input.csv
+```
+
+## Testing Framework
+
+### Available Tests
+1. Temporal Tests
+   - (Jan 2021)
+   - (Feb 2021)
+   - Tests simulation behavior across different time periods
+
+2. Parameter Sensitivity Tests
+   - Low beta (β=0.1)
+   - High beta (β=0.5)
+   - Tests model response to different transmission rates
+
+### Running Tests
+```bash
+# Build test suite
+make clean
+make test
+
+# Run all tests with 4 processes
+mpirun -np 4 ./sir_test_suite
+
+# Run with different number of processes
+mpirun -np <num_processes> ./sir_test_suite
+```
+
+### Test Results
+- Output Location: `./data/test_results/`
+- Files Generated:
+  - `<test_name>_p<num_processes>_results.csv`: Simulation results (e.g., `jan_2021_p4_results.csv` for a test run using 4 MPI processes)
+  - `timing_log.csv`: Performance measurements for each process
+
+### Adding New Tests
+1. Add test dataset to `./data/test_datasets/`
+2. Process dataset:
+   ```bash
+   python scripts/clean_sort_dataset.py ./data/test_datasets/new_dataset.csv
+   ```
+3. Add test configuration in `src/tests/TestSuite.cpp`:
+   ```cpp
+   configs.emplace_back(
+       dataDir + "sorted_new_dataset.csv",
+       resultDir + "new_test_name",
+       beta, gamma, dt, steps, minProcs, maxProcs
+   );
+   ```
+
+### Test Dataset Requirements
+- Must follow format specified in data/test_datasets/README.md
+- Include population and infection data for all 50 US states
+- Headers must match expected format
+- First line must contain dimensions: "<num_rows> <num_columns>"
+
+## Input/Output Formats
+
+### Input Dataset Requirements
+- First line: "<num_rows> <num_columns>"
+- Second line: Column headers
+- Required columns:
+  - Province_State
+  - Population
+  - Last_Update
+  - Lat, Long_
+  - Confirmed, Deaths, Recovered, Active
+
+### Output Files
+- Main simulation: `./data/output/simulation_results.csv`
+- Test results: `./data/test_results/<test_name>_p<num_processes>_results.csv`
+- Timing logs: 
+  - Main: `./data/output/timing_log.csv`
+  - Tests: `./data/test_results/timing_log.csv`
+
+## Implementation Details
+
+### 🧠 Key Tasks and How They Are Done
+
+#### 1️⃣ Dividing the Data
 The simulation divides the grid of cells into blocks, which are distributed among MPI processes. The division is based on:
 - **Number of processes**: The grid is divided into a number of blocks proportional to the number of MPI processes.
 - **Optimal block configuration**: The `GridSimulation::divideIntoOptimalBlocks` method calculates the best block distribution by evaluating configurations based on:
@@ -39,25 +165,25 @@ Each block contains a list of cell IDs, and the cells are assigned to blocks in 
 
 ---
 
-### 2️⃣ MPI Communication: Distributing, Broadcasting, and Gathering
+#### 2️⃣ MPI Communication: Distributing, Broadcasting, and Gathering
 
-#### **Distributing Blocks**
+##### **Distributing Blocks**
 - The `MPIHandler::distributeBlocks` method divides the blocks among MPI processes.
 - Rank 0 (the root process) determines the block distribution and sends the relevant blocks to each process using `MPI_Send`.
 - Non-root processes receive their assigned blocks using `MPI_Recv`.
 
-#### **Broadcasting Neighbor Maps**
+##### **Broadcasting Neighbor Maps**
 - The `MPIHandler::broadcastBlockNeighborMap` method broadcasts the block adjacency map (neighbor relationships between blocks) from Rank 0 to all other ranks using `MPI_Bcast`.
 - This ensures that all processes have the same view of the block relationships.
 
-#### **Gathering Results**
+##### **Gathering Results**
 - The `MPIHandler::gatherResults` method collects simulation results from all processes.
 - Each process sends its local results (e.g., time step data for its cells) to Rank 0 using `MPI_Gatherv`.
 - Rank 0 aggregates the results and normalizes the data (e.g., ensuring that the sum of S, I, and R values equals 1 for each cell).
 
 ---
 
-### 3️⃣ Rank Correlation with Code Implementation
+#### 3️⃣ Rank Correlation with Code Implementation
 
 - **Rank 0**:
   - Responsible for loading the initial data from the CSV file.
@@ -74,7 +200,7 @@ The rank of each process is accessed using the `MPIHandler::getRank` method, and
 
 ---
 
-### 4️⃣ How Everything Is Put Together
+#### 4️⃣ How Everything Is Put Together
 
 1. **Initialization**:
    - MPI is initialized in `main.cpp` using the `MPIHandler` class.
@@ -102,15 +228,15 @@ The rank of each process is accessed using the `MPIHandler::getRank` method, and
 
 ---
 
-### 5️⃣ Scoring Logic for Dividing Data
+#### 5️⃣ Scoring Logic for Dividing Data
 
 The `GridSimulation::divideIntoOptimalBlocks` method evaluates multiple configurations for dividing the grid into blocks and selects the best one based on a scoring system. Here's how the scoring works:
 
-#### **1. Configurations Evaluated**
+##### **1. Configurations Evaluated**
 - The method considers all divisors of the total number of cells as potential numbers of blocks.
 - For each divisor (number of blocks), it calculates the number of cells per block.
 
-#### **2. Factors Considered in Scoring**
+##### **2. Factors Considered in Scoring**
 Each configuration is scored based on the following factors:
 
 1. **Grid Shape**:
@@ -133,7 +259,7 @@ Each configuration is scored based on the following factors:
    - Configurations with too few blocks or too few cells per block are penalized.
    - For example, configurations with fewer blocks than the number of processes or fewer than 5 cells per block are penalized.
 
-#### **3. Scoring Formula**
+##### **3. Scoring Formula**
 The score for each configuration is calculated as:
 ```
 score = (gridRatio * 0.25) + (blockRatio * 0.25) + (cellRatio * 0.2) + (balanceFactor * 0.2) - penalty
@@ -145,7 +271,7 @@ Where:
 - `balanceFactor`: The balance between the number of blocks and the size of each block.
 - `penalty`: A penalty applied for extreme configurations.
 
-#### **4. Example Output**
+##### **4. Example Output**
 For 50 cells and 4 processes, the method might produce the following output:
 ```
 Finding optimal block distribution for 50 cells...
@@ -158,97 +284,36 @@ Finding optimal block distribution for 50 cells...
 Optimal distribution: 10 blocks with 5 cells each.
 ```
 
-#### **5. Selected Configuration**
+##### **5. Selected Configuration**
 The configuration with the highest score is selected as the optimal distribution. In this example, the configuration with 10 blocks and 5 cells per block is chosen.
 
 ---
 
-## 🛠️ Building the Project
+## Implementation Details
 
-### Steps to Compile:
-1. Open a terminal and navigate to the project directory:
-   ```bash
-   cd /path/to/project
-   ```
-2. Clean any previous build artifacts:
-   ```bash
-   make clean
-   ```
-3. Compile the project:
-   ```bash
-   make
-   ```
-
-This will compile all `.cpp` files and produce the executable:
-
-```bash
-sir_simulation
-```
-
----
-
-## 🚀 Running the Simulation
-
-Run the simulation using `mpirun` or `mpiexec`, specifying the number of processes. For example:
-
-```bash
-mpirun -np 4 ./sir_simulation
-```
-
-### Notes:
-- Ensure that MPI is installed on your system (e.g., OpenMPI or MPICH).
-- Add any additional options as needed for your simulation.
-
----
-
-## 📊 Plotting the Results
-
-After running the simulation, you can visualize the results using the provided Python script. Follow these steps:
-
-1. Navigate to the `scripts` directory:
-   ```bash
-   cd scripts
-   ```
-
-2. Run the plotting script:
-   ```bash
-   python PlottingSIRModelResults.py
-   ```
-
-### Requirements:
-Ensure you have Python installed along with the required libraries (e.g., `matplotlib`, `numpy`). You can install the dependencies using:
-```bash
-pip install -r requirements.txt
-```
-
----
-
-## 🧹 Cleaning the Project
-To clean up build artifacts (e.g., object files and the executable), run:
-```bash
-make clean
-```
-This will remove all files in the `output` directory and the compiled executable.
-
-
-
---
-
-## Acknowledgements
-
-We are deeply grateful to **Professor [Serena Curzel](https://www.linkedin.com/in/serena-curzel/)** and **Professor [Marco Gribaudo](https://www.linkedin.com/in/marco-gribaudo-41a327b3/)** for proposing the project idea and offering their continuous support and guidance throughout its development.
-
-This hands-on challenge was part of the final exam for the course Advanced Methods for Scientific Computing in High-Performance Computing (2024/25) at Politecnico di Milano.
-
-We also thank **Professor [Luca Formaggia](https://formaggia.faculty.polimi.it/)** for his exceptional teaching and mentorship throughout the course.
-
+- The simulation uses a 2D grid of cells, where each cell represents a unit of the population.
+- Each cell has SIR (Susceptible-Infected-Recovered) state variables, representing the number of susceptible, infected, and recovered individuals.
+- The model updates the state of each cell at each time step based on the SIR dynamics and the interactions with neighboring cells.
 
 ---
 
 ## Contributors
-
 - [Salvatore Mariano Librici](https://www.linkedin.com/in/salvatore-mariano-librici/)
-- [Nadah Khaled](https://www.linkedin.com/in/nadahkhaledd10/)
+- [Nada Khaled](https://www.linkedin.com/in/nadahkhaledd10/)
 - [Milica Sanjevic](https://www.linkedin.com/in/milica-sanjevic-321392327/)
 - [Hirdesh Kumar](https://www.linkedin.com/in/hirdeshkumar2407/)
 - [Yibo Li](https://www.linkedin.com/in/yibo-li-0b0b792a2/)
+
+## Analyzing Results
+
+### Running Analysis
+```bash
+# After running both main simulation and tests
+python scripts/analyze_results.py
+```
+
+### Output Location
+Analysis results are saved in `./data/analysis/`:
+- `sir_comparison.png`: Visual comparison of main simulation vs test results
+- `error_metrics.csv`: Detailed error measurements
+- `error_metrics.png`: Visualization of error metrics

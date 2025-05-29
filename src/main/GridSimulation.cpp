@@ -1,8 +1,8 @@
-#include "../header/GridSimulation.h"
-#include "../header/SIRCell.h"
-#include "../header/SIRModel.h"
-#include "../header/CSVParser.h"
-#include "../header/TimingUtils.h"
+#include "../../header/main/GridSimulation.h"
+#include "../../header/main/SIRCell.h"
+#include "../../header/main/SIRModel.h"
+#include "../../header/main/CSVParser.h"
+#include "../../header/main/TimingUtils.h"
 #include <mpi.h>
 #include <vector>
 #include <map>
@@ -388,16 +388,16 @@ std::vector<std::vector<double>> GridSimulation::runSimulation() {
                     int owningRank = -1; bool foundOwner = false;
                     // --- YOUR ORIGINAL placeholder for owner lookup ---
                      for(const auto& btor_entry : blockToRankMap) { 
-                        int b_id = btor_entry.first;
-                        int b_rank_val = btor_entry.second;
-                        if (b_rank_val == rank) continue;
-                        // !!! IMPORTANT: This placeholder needs to be replaced with efficient logic
-                        // to check if neighborGlobalId is in block b_id. This might involve
-                        // having access to a global view of allBlocks or a cell_id->block_id map.
-                        // if (/* some_global_all_blocks_map[b_id].contains(neighborGlobalId) */ ) {
-                        //    owningRank=b_rank_val; foundOwner=true; break;
-                        // }
-                    }
+                        int targetRank = btor_entry.second;
+                        if (targetRank == rank) continue;
+                        
+                        auto blockIt = cellToBlockMap.find(neighborGlobalId);
+                        if (blockIt != cellToBlockMap.end() && blockIt->second == btor_entry.first) {
+                            owningRank = targetRank;
+                            foundOwner = true;
+                            break;
+                        }
+                     }
                     // --- END YOUR ORIGINAL placeholder ---
                     if (foundOwner && owningRank != -1) {
                         localIndicesToSendToRank[owningRank].insert(static_cast<int>(localIndex));
@@ -592,6 +592,15 @@ void GridSimulation::setupSimulation(
         allBlocks = divideIntoOptimalBlocks(cells, mpi.getSize());
 
         std::cout << "Rank 0: Divided cells into " << allBlocks.size() << " blocks.\n";
+
+        // Initialize cellToBlockMap in setupSimulation
+        if (mpi.getRank() == 0) {
+            for (const auto& [blockId, cellList] : allBlocks) {
+                for (int cell : cellList) {
+                    cellToBlockMap[cell] = blockId;
+                }
+            }
+        }
 
         std::unordered_map<int, int> cellToBlock;
         for (const auto& [blockId, cellList] : allBlocks) {

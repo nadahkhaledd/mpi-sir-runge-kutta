@@ -1,0 +1,14 @@
+PhaseName,Statistic,Value,Units,NumRanks
+distributeBlocks_Bcast_TotalBlocks,Rank_0_Time,2.3979e-05,s,1
+distributeBlocks_CommLoop,Min,4.4736e-05,s,4
+distributeBlocks_CommLoop,Max,5.6206e-05,s,4
+distributeBlocks_CommLoop,Avg,5.10515e-05,s,4
+distributeBlocks_Total,Min,0.000169427,s,4
+distributeBlocks_Total,Max,0.000172927,s,4
+distributeBlocks_Total,Avg,0.000170761,s,4
+Total_MPI_Prep_In_Loop_Rank0,Rank_0_Time,4.8071e-05,s,1
+Total_MPI_Comm_In_Loop_Rank0,Rank_0_Time,4.756e-06,s,1
+Total_Local_Computation_Rank0,Rank_0_Time,0.000175709,s,1
+runSimulation_TotalWallTime,Min,0.000585136,s,4
+runSimulation_TotalWallTime,Max,0.000614104,s,4
+runSimulation_TotalWallTime,Avg,0.000596035,s,4

@@ -1,4 +1,4 @@
-#include "../header/SIRModel.h"
+#include "../../header/main/SIRModel.h"
 
 SIRModel::SIRModel(double b, double g, double timeStep, int steps)
     : beta(b), gammaRate(g), dt(timeStep), numSteps(steps) {}
