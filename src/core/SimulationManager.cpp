@@ -16,7 +16,7 @@ std::vector<double> SimulationManager::runSimulation(
     SIRModel model(beta, gamma, dt, numSteps);
     GridSimulation simulation(model, mpi.getRank(), mpi.getSize());
 
-    // Load data
+    // Load and broadcast data
     std::vector<std::vector<double>> fullData;
     if (mpi.getRank() == 0) {
         fullData = CSVParser::loadUSStateData(dataPath);
@@ -24,15 +24,33 @@ std::vector<double> SimulationManager::runSimulation(
             std::cerr << "Failed to load data from: " << dataPath << std::endl;
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
+        // Print data validation
+        std::cout << "Loaded " << fullData.size() << " cells with " 
+                  << (fullData.empty() ? 0 : fullData[0].size()) << " values each" << std::endl;
     }
 
-    // Setup and run
+    // Setup and run simulation
     setupAndRunSimulation(mpi, simulation, fullData);
 
-    // Get results
+    // Get results only from rank 0's perspective
+    std::vector<double> globalResults;
     auto localResults = simulation.runSimulation();
-    std::vector<int> recvCounts, displacements;
-    return mpi.gatherResults(localResults, recvCounts, displacements);
+
+    // Gather results on rank 0 only
+    if (mpi.getRank() == 0) {
+        // This will hold the final time series
+        globalResults.reserve(numSteps * 4); // time, S, I, R for each step
+        
+        for (const auto& step : localResults) {
+            globalResults.push_back(step[0]); // time
+            globalResults.push_back(step[1]); // S
+            globalResults.push_back(step[2]); // I
+            globalResults.push_back(step[3]); // R
+        }
+    }
+
+    // Only rank 0's results matter for output
+    return globalResults;
 }
 
 void SimulationManager::setupAndRunSimulation(

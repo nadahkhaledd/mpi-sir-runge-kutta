@@ -25,9 +25,16 @@ def plot_sir_per_rank(df):
     """
     Plot S, I, R lines separately for each MPI rank.
     """
+    # Ensure we have clean data by averaging duplicate time points
+    avg_df = df.groupby(['Rank', 'Time']).agg({
+        'S_avg': 'mean',
+        'I_avg': 'mean',
+        'R_avg': 'mean'
+    }).reset_index()
+
     plt.figure(figsize=(10, 6))
-    for rank in df["Rank"].unique():
-        sub = df[df["Rank"] == rank]
+    for rank in avg_df["Rank"].unique():
+        sub = avg_df[avg_df["Rank"] == rank]
         plt.plot(sub["Time"], sub["S_avg"], color="blue", alpha=0.5)
         plt.plot(sub["Time"], sub["I_avg"], color="orange", alpha=0.5)
         plt.plot(sub["Time"], sub["R_avg"], color="green", alpha=0.5)
@@ -138,26 +145,32 @@ def plot_infection_heatmap_per_rank(df, vmin=0.0, vmax=0.25):
     - Grouped by Rank → Time for matrix-style heatmap.
     """
 
-    # Pivot to get a matrix: Rows = Ranks, Columns = Time, Values = I_avg
-    pivoted = df.pivot(index="Rank", columns="Time", values="I_avg")
-
-    plt.figure(figsize=(12, 6))
-    sns.heatmap(
-        pivoted,
-        cmap="YlOrRd",
-        vmin=vmin,
-        vmax=vmax,
-        cbar_kws={"label": "Infected Proportion"}
-    )
-    plt.title("Heatmap of Infection Intensity Over Time (Per Rank)")
-    plt.xlabel("Time")
-    plt.ylabel("MPI Rank")
-    plt.tight_layout()
-    plt.savefig("./plots/infection_heatmap_per_rank.png")
-    print("Saved: infection_heatmap_per_rank.png")
-
-
-
+    # Ensure we have unique time points per rank by averaging if necessary
+    avg_df = df.groupby(['Rank', 'Time'])['I_avg'].mean().reset_index()
+    
+    # Create pivot table with unique indices
+    try:
+        pivoted = avg_df.pivot(index='Rank', columns='Time', values='I_avg')
+        
+        plt.figure(figsize=(12, 6))
+        sns.heatmap(
+            pivoted,
+            cmap='YlOrRd',
+            vmin=vmin,
+            vmax=vmax,
+            cbar_kws={'label': 'Infected Proportion'}
+        )
+        plt.title('Heatmap of Infection Intensity Over Time (Per Rank)')
+        plt.xlabel('Time Step')
+        plt.ylabel('MPI Rank')
+        plt.tight_layout()
+        plt.savefig("./plots/infection_heatmap_per_rank.png")
+        plt.close()
+        print("Saved: infection_heatmap_per_rank.png")
+    except ValueError as e:
+        print(f"Warning: Could not create heatmap - {str(e)}")
+        print("Data summary:")
+        print(avg_df.groupby(['Rank', 'Time']).size().reset_index(name='count'))
 
 # -----------------------------
 # Plot 6: Animated Infection Spread (Per Rank Over Time)

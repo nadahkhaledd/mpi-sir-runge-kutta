@@ -102,6 +102,7 @@ private:
     std::unordered_map<int, std::vector<int>> ghostNeighborMap;
     std::unordered_map<int, int> cellIdToLocalIndex; // global cell ID -> local index
     std::unordered_map<int, std::vector<int>> neighborMap; // local neighbor map if different from cellNeighborMap
+    std::unordered_map<int, int> cellToBlockMap;  // Maps cell IDs to their block IDs
 
 
 

@@ -138,37 +138,46 @@ std::vector<double> MPIHandler::gatherResults(const std::vector<std::vector<doub
 
 // writeResults: now receives correct counts/displacements
 void MPIHandler::writeResults(const std::vector<double>& globalFlat,
-                              const std::vector<int>& recvCounts,
-                              const std::vector<int>& displacements) {
-    double ioStartTime = 0.0;
+                            const std::vector<int>& recvCounts,
+                            const std::vector<int>& displacements) {
+    double startTime = MPI_Wtime();
+    
     if (rank == 0) {
-        ioStartTime = MPI_Wtime();
-        if (!globalFlat.empty() && (recvCounts.empty() || displacements.empty() || recvCounts.size()!=static_cast<size_t>(size) || displacements.size()!=static_cast<size_t>(size))) {
-             std::cerr << "Rank 0 Error in writeResults: recvCounts/displacements invalid." << std::endl; return;
+        if (!globalFlat.empty() && (recvCounts.empty() || displacements.empty() || 
+            recvCounts.size() != static_cast<size_t>(size) || 
+            displacements.size() != static_cast<size_t>(size))) {
+            std::cerr << "Rank 0 Error in writeResults: recvCounts/displacements invalid." << std::endl;
+            return;
         }
+
         std::ofstream outfile("./data/output/simulation_results.csv");
-        if (!outfile) { std::cerr << "Rank 0 Error: Cannot open ./data/output/simulation_results.csv" << std::endl; return; }
-        outfile << "Rank,Time,S_avg,I_avg,R_avg\n";
-        int doublesPerStep = 4;
+        outfile << "Time,Rank,S_avg,I_avg,R_avg\n";
+        
+        const int valuesPerStep = 4;
         for (int proc = 0; proc < size; ++proc) {
-            if (proc >= static_cast<int>(displacements.size()) || proc >= static_cast<int>(recvCounts.size())) continue;
-            int startIdx = displacements[proc]; int numDoubles = recvCounts[proc];
-            if (numDoubles < 0 || (numDoubles % doublesPerStep != 0 && numDoubles !=0) ) continue;
-            if (numDoubles == 0) continue;
-            int numSteps = numDoubles / doublesPerStep;
-            for (int i = 0; i < numSteps; ++i) {
-                int idx = startIdx + i * doublesPerStep;
-                if (idx + doublesPerStep - 1 < static_cast<int>(globalFlat.size())) {
-                    outfile << proc << "," << globalFlat[idx + 0] << "," << globalFlat[idx + 1] << "," << globalFlat[idx + 2] << "," << globalFlat[idx + 3] << "\n";
-                } else { break; }
+            int startIdx = displacements[proc];
+            int numSteps = recvCounts[proc] / valuesPerStep;
+            
+            for (int step = 0; step < numSteps; ++step) {
+                int idx = startIdx + step * valuesPerStep;
+                if (idx + 3 >= static_cast<int>(globalFlat.size())) break;
+
+                outfile << std::fixed << std::setprecision(6)
+                       << globalFlat[idx] << ","     // Time
+                       << proc << ","                 // Rank
+                       << globalFlat[idx + 1] << ","  // S
+                       << globalFlat[idx + 2] << ","  // I
+                       << globalFlat[idx + 3] << "\n"; // R
             }
         }
         outfile.close();
-        std::cout << "Rank 0: Results written to ./data/simulation_results.csv" << std::endl;
     }
+
     MPI_Barrier(MPI_COMM_WORLD);
     if (rank == 0) {
-        std::cout << std::fixed << std::setprecision(6) << "TIMING [Rank 0, Phase: writeResults_FileIO]: " << (MPI_Wtime() - ioStartTime) << "s\n";
+        std::cout << std::fixed << std::setprecision(6) 
+                  << "TIMING [Rank 0, Phase: writeResults_FileIO]: " 
+                  << (MPI_Wtime() - startTime) << "s\n";
     }
 }
 // distributeBlocks: Distributes ONLY block structure (IDs)

@@ -23,7 +23,8 @@ TEST_TARGET = sir_test_suite
 all: $(TARGET)
 
 # Test target
-test: $(TEST_TARGET)
+test: $(OBJS_CORE) $(OBJS_TESTS)
+	$(MPICC) $(CFLAGS) -o $(TEST_TARGET) $^
 
 # Main executable
 $(TARGET): $(OBJS_CORE) $(OBJS_MAIN)
@@ -51,4 +52,13 @@ output/%.o: %.cpp
 clean:
 	rm -rf output $(TARGET) $(TEST_TARGET)
 
-.PHONY: all test clean
+analyze: test
+	@mkdir -p data/analysis
+	python scripts/analyze_tests.py
+	python scripts/visualize_comparison.py
+
+plot: analyze
+	@echo "Generating plots in data/analysis/"
+	python scripts/PlottingSIRModelResults.py
+
+.PHONY: all test clean analyze plot

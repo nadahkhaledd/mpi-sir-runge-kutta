@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <iostream>
 #include <fstream>
+#include <iomanip> // For std::setprecision
 
 void TestRunner::runTest(const TestConfig& config, MPIHandler& mpi) {
     if (mpi.getRank() == 0) {
@@ -13,12 +14,14 @@ void TestRunner::runTest(const TestConfig& config, MPIHandler& mpi) {
         std::cout << "\n=== Running Test ===\n"
                   << "Dataset: " << config.datasetPath << "\n"
                   << "Parameters: β=" << config.beta 
-                  << ", γ=" << config.gamma << std::endl;
+                  << ", γ=" << config.gamma 
+                  << ", dt=" << config.dt
+                  << ", steps=" << config.numSteps << std::endl;
     }
 
     auto startTime = TimingUtils::startTimer();
     
-    // Use SimulationManager to run the simulation
+    // Run simulation and get results
     auto results = SimulationManager::runSimulation(
         mpi,
         config.datasetPath,
@@ -29,22 +32,34 @@ void TestRunner::runTest(const TestConfig& config, MPIHandler& mpi) {
         config.outputPrefix
     );
 
-    // Save test results
+    // Save test results (only from rank 0)
     if (mpi.getRank() == 0) {
         std::string resultsPath = config.outputPrefix + 
-                                 "_p" + std::to_string(mpi.getSize()) +
-                                 "_results.csv";
+                                "_p" + std::to_string(mpi.getSize()) +
+                                "_results.csv";
+        
         std::ofstream outfile(resultsPath);
-        outfile << "Time,S,I,R\n";
-        int doublesPerStep = 4;
-        for (size_t i = 0; i < results.size(); i += doublesPerStep) {
-            outfile << results[i] << "," 
-                   << results[i + 1] << ","
-                   << results[i + 2] << ","
-                   << results[i + 3] << "\n";
+        if (!outfile) {
+            std::cerr << "Error: Could not open file " << resultsPath << std::endl;
+            MPI_Abort(MPI_COMM_WORLD, 1);
         }
+
+        outfile << "Time,S_avg,I_avg,R_avg\n";  // Simplified header - we only want one timeline
+        const int valuesPerStep = 4;
+        
+        for (size_t i = 0; i < results.size(); i += valuesPerStep) {
+            if (i + 3 >= results.size()) break;
+
+            outfile << std::fixed << std::setprecision(6)
+                   << results[i] << ","       // Time
+                   << results[i + 1] << ","   // S
+                   << results[i + 2] << ","   // I
+                   << results[i + 3] << "\n"; // R
+        }
+        outfile.close();
     }
 
+    MPI_Barrier(MPI_COMM_WORLD);
     TimingUtils::printAndLogTimingSummary("Test_Total", 
         TimingUtils::stopTimer(startTime), mpi.getRank(), mpi.getSize());
 }
