@@ -286,8 +286,8 @@ def plot_rank0_time_phases(timing_df, output_dir="./plots"):
 if __name__ == "__main__":
 
     # Define file paths
-    sim_data_file = "./data/simulation_results.csv"
-    timing_log_file = "./data/timing_log.csv"
+    sim_data_file = "./data/output/simulation_results.csv"
+    timing_log_file = "./data/output/timing_log.csv"
     output_dir = "./plots"
 
     # Ensure output directory exists

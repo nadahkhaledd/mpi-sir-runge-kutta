@@ -1,4 +1,5 @@
-#include "../header/CSVParser.h"
+#include "../../header/core/CSVParser.h"
+#include "../../header/core/SIRCell.h"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -64,22 +65,21 @@ std::vector<std::vector<double>> CSVParser::loadUSStateData(const std::string& f
         }
         
         try {
-            // Convert values to doubles
-            int population = std::stoi(tokens[1]); // Population as integer
+            // Convert values to doubles (not integers)
+            double population = std::stod(tokens[1]); // Convert to double instead of int
             double lat = std::stod(tokens[3]);
             double lon = std::stod(tokens[4]);
             double confirmed = std::stod(tokens[5]);
             double deaths = std::stod(tokens[6]);
-            double recovered = std::stod(tokens[7]);
-            double active = std::stod(tokens[8]);
             
-            // Store values (convert population to double for consistency in the data structure)
-            data.push_back({static_cast<double>(population), lat, lon, confirmed, deaths, recovered, active});
-        } catch (const std::invalid_argument& e) {
+            // Handle empty or missing Recovered/Active fields
+            double recovered = tokens[7].empty() ? 0.0 : std::stod(tokens[7]);
+            double active = tokens[8].empty() ? confirmed - deaths - recovered : std::stod(tokens[8]);
+            
+            // Store values
+            data.push_back({population, lat, lon, confirmed, deaths, recovered, active});
+        } catch (const std::exception& e) {
             std::cerr << "Invalid value at line " << lineCount << ": " << line << "\nError: " << e.what() << std::endl;
-            continue;
-        } catch (const std::out_of_range& e) {
-            std::cerr << "Value out of range at line " << lineCount << ": " << line << "\nError: " << e.what() << std::endl;
             continue;
         }
     }
@@ -99,19 +99,26 @@ SIRCell CSVParser::mapToSIR(const std::vector<double>& rowData) {
 
     // Ensure population is valid
     if (population <= 0) {
-        std::cerr << "Error: Invalid population value in input data.\n";
-        MPI_Abort(MPI_COMM_WORLD, 1);
+        std::cerr << "Warning: Invalid population value, using default values\n";
+        return SIRCell(1.0, 0.0, 0.0);  // Return default state
     }
 
-    // Calculate S, I, R based on the population
+    // Calculate S, I, R with safety checks
     double S = (population - confirmed) / population;
-    double I = active / population;
-    double R = (recovered + deaths) / population;
+    double I = (active > 0) ? active / population : 0.0;
+    double R = ((recovered + deaths) > 0) ? (recovered + deaths) / population : 0.0;
 
-    // Ensure S, I, R are within valid bounds
-    if (S < 0) S = 0;
-    if (I < 0) I = 0;
-    if (R < 0) R = 0;
+    // Normalize to ensure sum is 1.0
+    double sum = S + I + R;
+    if (sum > 0) {
+        S /= sum;
+        I /= sum;
+        R /= sum;
+    } else {
+        S = 1.0;
+        I = 0.0;
+        R = 0.0;
+    }
 
     return SIRCell(S, I, R);
 }

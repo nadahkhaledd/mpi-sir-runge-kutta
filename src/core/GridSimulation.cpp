@@ -1,8 +1,8 @@
-#include "../header/GridSimulation.h"
-#include "../header/SIRCell.h"
-#include "../header/SIRModel.h"
-#include "../header/CSVParser.h"
-#include "../header/TimingUtils.h"
+#include "../../header/core/GridSimulation.h"
+#include "../../header/core/SIRCell.h"
+#include "../../header/core/SIRModel.h"
+#include "../../header/core/CSVParser.h"
+#include "../../header/core/TimingUtils.h"
 #include <mpi.h>
 #include <vector>
 #include <map>

@@ -1,67 +1,51 @@
-# Your existing Makefile content...
-# CC = g++
+# Compiler and flags
 MPICC = mpic++
-# CFLAGS = -Wall -g -O0 # For debugging
-CFLAGS = -Wall -O2     # For release/optimization
-# LDFLAGS = -lm # Example for math library
+CFLAGS = -Wall -O2
 
-# Define source files
-SRCS_MPI_HANDLER = src/MPIHandler.cpp
-SRCS_GRID_SIM = src/GridSimulation.cpp
-SRCS_CSV_PARSER = src/CSVParser.cpp
-SRCS_SIR_CELL = src/SIRCell.cpp
-SRCS_SIR_MODEL = src/SIRModel.cpp
-SRCS_TIMING_UTILS = src/TimingUtils.cpp # <<< ADDED
+# Source files
+SRCS_CORE = $(wildcard src/core/*.cpp)
+SRCS_TESTS = $(wildcard src/tests/*.cpp)
 SRCS_MAIN = main.cpp
 
-# Define object files based on source files
-OBJS_MPI_HANDLER = $(SRCS_MPI_HANDLER:.cpp=.o)
-OBJS_MPI_HANDLER := $(patsubst src/%,output/%,$(OBJS_MPI_HANDLER))
+# Object files
+OBJS_CORE = $(patsubst src/core/%.cpp,output/core/%.o,$(SRCS_CORE))
+OBJS_TESTS = $(patsubst src/tests/%.cpp,output/tests/%.o,$(SRCS_TESTS))
+OBJS_MAIN = $(patsubst %.cpp,output/%.o,$(SRCS_MAIN))
 
-OBJS_GRID_SIM = $(SRCS_GRID_SIM:.cpp=.o)
-OBJS_GRID_SIM := $(patsubst src/%,output/%,$(OBJS_GRID_SIM))
-
-OBJS_CSV_PARSER = $(SRCS_CSV_PARSER:.cpp=.o)
-OBJS_CSV_PARSER := $(patsubst src/%,output/%,$(OBJS_CSV_PARSER))
-
-OBJS_SIR_CELL = $(SRCS_SIR_CELL:.cpp=.o)
-OBJS_SIR_CELL := $(patsubst src/%,output/%,$(OBJS_SIR_CELL))
-
-OBJS_SIR_MODEL = $(SRCS_SIR_MODEL:.cpp=.o)
-OBJS_SIR_MODEL := $(patsubst src/%,output/%,$(OBJS_SIR_MODEL))
-
-OBJS_TIMING_UTILS = $(SRCS_TIMING_UTILS:.cpp=.o) # <<< ADDED
-OBJS_TIMING_UTILS := $(patsubst src/%,output/%,$(OBJS_TIMING_UTILS)) # <<< ADDED
-
-OBJS_MAIN = $(SRCS_MAIN:.cpp=.o)
-OBJS_MAIN := $(patsubst src/%,output/%,$(OBJS_MAIN))
-
-
-# Output directory
-OUTPUT_DIR = output/
-
-# Target executable
+# Executables
 TARGET = sir_simulation
-
-# All objects
-ALL_OBJS = $(OBJS_CSV_PARSER) $(OBJS_GRID_SIM) $(OBJS_MPI_HANDLER) $(OBJS_SIR_CELL) $(OBJS_SIR_MODEL) $(OBJS_TIMING_UTILS) $(OBJS_MAIN) # <<< ADDED OBJS_TIMING_UTILS
+TEST_TARGET = sir_test_suite
 
 # Default target
 all: $(TARGET)
 
-$(TARGET): $(ALL_OBJS)
-	$(MPICC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+# Test target
+test: $(TEST_TARGET)
 
-# Rule to compile .cpp files in src/ to .o files in output/
-$(OUTPUT_DIR)%.o: src/%.cpp | $(OUTPUT_DIR)
+# Main executable
+$(TARGET): $(OBJS_CORE) $(OBJS_MAIN)
+	$(MPICC) $(CFLAGS) -o $@ $^
+
+# Test executable
+$(TEST_TARGET): $(OBJS_CORE) $(OBJS_TESTS)
+	$(MPICC) $(CFLAGS) -o $@ $^
+
+# Compile core source files
+output/core/%.o: src/core/%.cpp
+	@mkdir -p output/core
 	$(MPICC) $(CFLAGS) -c $< -o $@
 
-# Create output directory if it doesn't exist
-$(OUTPUT_DIR):
-	mkdir -p $(OUTPUT_DIR)
+# Compile test source files
+output/tests/%.o: src/tests/%.cpp
+	@mkdir -p output/tests
+	$(MPICC) $(CFLAGS) -c $< -o $@
 
-# Clean rule
+# Compile main
+output/%.o: %.cpp
+	@mkdir -p output
+	$(MPICC) $(CFLAGS) -c $< -o $@
+
 clean:
-	rm -rf $(OUTPUT_DIR) $(TARGET)
+	rm -rf output $(TARGET) $(TEST_TARGET)
 
-.PHONY: all cleans
+.PHONY: all test clean
