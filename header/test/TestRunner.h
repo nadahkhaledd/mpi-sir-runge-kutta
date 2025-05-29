@@ -6,7 +6,6 @@
 
 class TestRunner {
 public:
-    // Declaration only - implementation moved to cpp file
     static void runTest(const TestConfig& config, MPIHandler& mpi);
 };
 

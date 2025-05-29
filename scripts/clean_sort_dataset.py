@@ -35,26 +35,12 @@ us_states = [
 ]
 
 def clean_sort_csv(input_file):
-    # Get directory and filename from input path
     input_dir = os.path.dirname(input_file)
     input_filename = os.path.basename(input_file)
-    
-    # Create output filename with 'sorted_' prefix
     output_filename = f"sorted_{input_filename}"
     output_file = os.path.join(input_dir, output_filename)
 
-    # Define columns to keep (0-based indices)
-    keep_columns = [
-        0,  # Province_State
-        1, # Population
-        3,  # Last_Update
-        4,  # Lat
-        5,  # Long_
-        6,  # Confirmed
-        7,  # Deaths
-        8,  # Recovered
-        9,  # Active
-    ]
+    keep_columns = [0, 1, 3, 4, 5, 6, 7, 8, 9]
     column_names = [
         "Province_State", "Population", "Last_Update", 
         "Lat", "Long_", "Confirmed", "Deaths", "Recovered", "Active"
