@@ -20,16 +20,14 @@ Each dataset undergoes the following preprocessing:
 - **Location**: `./data/sorted_initial_conditions.csv`
 
 ### Temporal Test Datasets
-1. **Early Wave Dataset**
+1. **January 2021 Dataset**
    - **File**: sorted_01-01-2021.csv
    - **Date**: January 1, 2021
-   - **Purpose**: Testing model on early wave data
    - **Parameters**: β=0.3, γ=0.1
 
-2. **Peak Wave Dataset**
+2. **February 2021 Dataset**
    - **File**: sorted_02-05-2021.csv
    - **Date**: February 5, 2021
-   - **Purpose**: Testing model on peak infection period
    - **Parameters**: β=0.3, γ=0.1
 
 ### Parameter Sensitivity Tests
@@ -82,17 +80,3 @@ Alabama,4903185,2021-01-01,...
    ```
 6. Verify output format matches requirements
 7. Add test configuration in `src/test/TestSuite.cpp`
-
-## Directory Structure
-```
-data/
-├── README.md
-├── sorted_01-01-2021.csv
-├── sorted_02-02-2021.csv
-└── sorted_02-05-2021.csv
-scripts/
-└── clean_sort_dataset.py
-src/
-└── test/
-    └── TestSuite.cpp
-```
