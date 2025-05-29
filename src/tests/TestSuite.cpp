@@ -22,13 +22,13 @@ void TestSuite::addParameterSensitivityTests() {
     const std::string resultDir = "./data/test_results/";
 
     configs.emplace_back(
-        dataDir + "sorted_01-01-2021.csv", // Changed from initial_conditions
+        dataDir + "sorted_01-01-2021.csv",
         resultDir + "sensitivity_low_beta",
         0.1, 0.1, 0.2, 100, 4, 4
     );
 
     configs.emplace_back(
-        dataDir + "sorted_01-01-2021.csv", // Changed from initial_conditions
+        dataDir + "sorted_01-01-2021.csv",
         resultDir + "sensitivity_high_beta",
         0.5, 0.1, 0.2, 100, 4, 4
     );

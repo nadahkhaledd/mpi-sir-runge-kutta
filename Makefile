@@ -7,6 +7,9 @@ SRCS_CORE = $(wildcard src/core/*.cpp)
 SRCS_TESTS = $(wildcard src/tests/*.cpp)
 SRCS_MAIN = main.cpp
 
+# Test sources
+TEST_SOURCES = src/tests/TestRunner.cpp src/tests/TestSuite.cpp src/tests/test_main.cpp src/tests/TestConfig.cpp
+
 # Object files
 OBJS_CORE = $(patsubst src/core/%.cpp,output/core/%.o,$(SRCS_CORE))
 OBJS_TESTS = $(patsubst src/tests/%.cpp,output/tests/%.o,$(SRCS_TESTS))

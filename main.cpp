@@ -1,36 +1,21 @@
 #include <mpi.h>
 #include "header/core/MPIHandler.h"
-#include "header/core/SIRModel.h"
-#include "header/core/CSVParser.h"
-#include "header/core/GridSimulation.h"
-#include "header/core/TimingUtils.h"
 #include "header/core/SimulationManager.h"
+#include "header/core/TimingUtils.h"
 #include <iostream>
-#include <map>
-#include <list>
-#include <vector>
-#include <string>
-#include <unordered_map>
-#include <unordered_set> 
-#include <cmath>
-#include <fstream> // For file output
+#include <fstream>
 
 int main(int argc, char *argv[]) {
     MPIHandler mpi(argc, argv);
 
-    // --- Initialize Timing Log File (Rank 0 only) ---
     if (mpi.getRank() == 0) {
-        if (!TimingUtils::initLogFile("./data/output/timing_log.csv")) { // Or your preferred filename
-            std::cerr << "Rank 0: Failed to initialize timing log file. Timing will not be written to file." << std::endl;
-            // You might choose to MPI_Abort or continue without file logging
+        if (!TimingUtils::initLogFile("./data/output/timing_log.csv")) {
+            std::cerr << "Rank 0: Failed to initialize timing log file." << std::endl;
+            MPI_Abort(MPI_COMM_WORLD, 1);
         }
     }
-    MPI_Barrier(MPI_COMM_WORLD); // Ensure log file is open before other ranks proceed with timed ops
+    MPI_Barrier(MPI_COMM_WORLD);
 
-    std::cout << "Rank " << mpi.getRank() << ": MPI initialized (after timing init).\n";
-
-
-    // Run simulation using manager
     auto results = SimulationManager::runSimulation(
         mpi,
         "./data/sorted_initial_conditions.csv",
@@ -38,7 +23,6 @@ int main(int argc, char *argv[]) {
         "./data/simulation"
     );
 
-    // Write results
     if (mpi.getRank() == 0) {
         std::ofstream outfile("./data/output/simulation_results.csv");
         outfile << "Time,S,I,R\n";
@@ -52,7 +36,5 @@ int main(int argc, char *argv[]) {
         TimingUtils::closeLogFile();
     }
 
-    std::cout << "Rank " << mpi.getRank() << ": Finalizing MPI.\n";
-    // MPIHandler destructor will call MPI_Finalize()
     return 0;
 }

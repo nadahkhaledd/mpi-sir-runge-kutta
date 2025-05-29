@@ -3,29 +3,29 @@
 #include "../../header/core/MPIHandler.h"
 #include "../../header/core/SIRModel.h"
 #include "../../header/core/GridSimulation.h"
-#include "../../header/core/TimingUtils.h"
 #include "../../header/core/CSVParser.h"
+#include "../../header/core/TimingUtils.h"
 #include <mpi.h>
 #include <iostream>
 #include <fstream>
-#include <sstream>
 #include <filesystem>
 
 void TestRunner::runTest(const TestConfig& config, MPIHandler& mpi) {
+    auto startTime = TimingUtils::startTimer();
+    
     if (mpi.getRank() == 0) {
-        // Create test results directory if it doesn't exist
         std::filesystem::create_directories("./data/test_results");
-        
         std::cout << "\n=== Running Test ===\n"
                   << "Configuration:\n"
                   << "- Dataset: " << config.datasetPath << "\n"
-                  << "- Beta: " << config.beta << "\n"
-                  << "- Gamma: " << config.gamma << "\n"
-                  << "- Time step: " << config.dt << "\n"
+                  << "Parameters: β=" << config.beta
+                  << ", γ=" << config.gamma
+                  << ", dt=" << config.dt << "\n"
                   << "- Steps: " << config.numSteps << "\n"
                   << "- Processes: " << mpi.getSize() << "\n";
     }
 
+    auto setupStartTime = TimingUtils::startTimer();
     // Initialize simulation
     SIRModel model(config.beta, config.gamma, config.dt, config.numSteps);
     GridSimulation simulation(model, mpi.getRank(), mpi.getSize());
@@ -42,19 +42,27 @@ void TestRunner::runTest(const TestConfig& config, MPIHandler& mpi) {
     
     simulation.setupSimulation(mpi, fullData, allBlocks, cellNeighborMap, 
                              ghostNeighborMap, blockNeighborMap);
+    TimingUtils::printAndLogTimingSummary("Test_Setup", 
+        TimingUtils::stopTimer(setupStartTime), mpi.getRank(), mpi.getSize());
 
+    auto simStartTime = TimingUtils::startTimer();
+    // Run the simulation
     auto localResults = simulation.runSimulation();
+    TimingUtils::printAndLogTimingSummary("Test_Simulation", 
+        TimingUtils::stopTimer(simStartTime), mpi.getRank(), mpi.getSize());
 
+    auto gatherStartTime = TimingUtils::startTimer();
     // Gather results
     std::vector<int> recvCounts, displacements;
     auto globalResults = mpi.gatherResults(localResults, recvCounts, displacements);
+    TimingUtils::printAndLogTimingSummary("Test_GatherResults", 
+        TimingUtils::stopTimer(gatherStartTime), mpi.getRank(), mpi.getSize());
 
     // Save results with corrected path (remove extra prefix)
     if (mpi.getRank() == 0) {
         std::string resultsPath = config.outputPrefix + 
                                  "_p" + std::to_string(mpi.getSize()) +
                                  "_results.csv";
-        
         std::ofstream outfile(resultsPath);
         outfile << "Time,S,I,R\n";
         int doublesPerStep = 4;
@@ -67,4 +75,7 @@ void TestRunner::runTest(const TestConfig& config, MPIHandler& mpi) {
         
         std::cout << "Test results saved to: " << resultsPath << "\n";
     }
+
+    TimingUtils::printAndLogTimingSummary("Test_Total", 
+        TimingUtils::stopTimer(startTime), mpi.getRank(), mpi.getSize());
 }
