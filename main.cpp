@@ -25,14 +25,13 @@ int main(int argc, char *argv[]) {
 
     if (mpi.getRank() == 0) {
         std::ofstream outfile("./data/output/simulation_results.csv");
-        outfile << "Time,Rank,S_avg,I_avg,R_avg\n";  // Changed header format
+        outfile << "Time,S_avg,I_avg,R_avg\n";  // Simplified header
         int doublesPerStep = 4;
         for (size_t i = 0; i < results.size(); i += doublesPerStep) {
-            outfile << results[i] << "," 
-                   << "0" << ","    // Add Rank column
-                   << results[i + 1] << ","
-                   << results[i + 2] << ","
-                   << results[i + 3] << "\n";
+            outfile << results[i] << ","     // Time 
+                   << results[i + 1] << ","  // S
+                   << results[i + 2] << ","  // I
+                   << results[i + 3] << "\n"; // R
         }
         TimingUtils::closeLogFile();
     }

@@ -2,7 +2,6 @@
 #define TEST_CONFIG_H
 
 #include <string>
-#include <vector>
 
 struct TestConfig {
     std::string datasetPath;
@@ -11,20 +10,14 @@ struct TestConfig {
     double gamma;
     double dt;
     int numSteps;
-    int minProcesses;
-    int maxProcesses;
+    int minProcs;
+    int maxProcs;
 
     TestConfig(const std::string& path, const std::string& prefix, 
-              double b, double g, double delta_t, int steps, 
-              int minP, int maxP);
+               double b, double g, double deltaT, int steps, int minP, int maxP)
+        : datasetPath(path), outputPrefix(prefix), 
+          beta(b), gamma(g), dt(deltaT), numSteps(steps), 
+          minProcs(minP), maxProcs(maxP) {}
 };
 
-class TestSuite {
-public:
-    std::vector<TestConfig> configs;
-    void addTemporalTests();
-    void addParameterSensitivityTests();
-    void addAllTests();
-};
-
-#endif
+#endif // TEST_CONFIG_H

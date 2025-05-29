@@ -1,32 +1,33 @@
 #include "../../header/tests/TestConfig.h"
 
 void TestSuite::addTemporalTests() {
-    const std::string dataDir = "./data/test_datasets/";
     const std::string resultDir = "./data/test_results/";
     
-    // First wave test - January 2021
-    configs.emplace_back(
-        dataDir + "sorted_01-01-2021.csv",
-        resultDir + "jan_2021",
-        0.3,    // β - transmission rate
-        0.1,    // γ - recovery rate
-        0.1,    // dt - time step
-        100,    // numSteps
-        2,      // minProcs
-        8       // maxProcs
-    );
+    // Match the main simulation parameters for proper comparison
+    const double dt = 0.2;          // Same as main simulation
+    const int numSteps = 100;       // Same as main simulation
+    const double beta = 0.3;        // Same as main simulation
+    const double gamma = 0.1;       // Same as main simulation
 
-    // Second wave test - February 2021
-    configs.emplace_back(
-        dataDir + "sorted_02-05-2021.csv",
-        resultDir + "feb_2021",
-        0.3,    // Keep same parameters for fair comparison
-        0.1,
-        0.1,
-        100,
-        2,
-        8
-    );
+    // Get all CSV files from test dataset directory
+    std::filesystem::path dataDir("./data/test_datasets/");
+    for (const auto& entry : std::filesystem::directory_iterator(dataDir)) {
+        if (entry.path().extension() == ".csv") {
+            std::string filename = entry.path().filename().string();
+            std::string testName = filename.substr(0, filename.find(".csv"));
+            
+            configs.emplace_back(
+                entry.path().string(),
+                resultDir + testName,
+                beta,    // Use same β as main
+                gamma,   // Use same γ as main
+                dt,      // Use same dt as main
+                numSteps,// Use same number of steps as main
+                2,      // minProcs
+                8       // maxProcs
+            );
+        }
+    }
 }
 
 void TestSuite::addParameterSensitivityTests() {

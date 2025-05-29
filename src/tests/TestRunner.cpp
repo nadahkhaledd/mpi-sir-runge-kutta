@@ -44,12 +44,11 @@ void TestRunner::runTest(const TestConfig& config, MPIHandler& mpi) {
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
 
-        outfile << "Time,S_avg,I_avg,R_avg\n";  // Simplified header - we only want one timeline
+        outfile << "Time,S_avg,I_avg,R_avg\n";  // Match main simulation format
         const int valuesPerStep = 4;
         
         for (size_t i = 0; i < results.size(); i += valuesPerStep) {
             if (i + 3 >= results.size()) break;
-
             outfile << std::fixed << std::setprecision(6)
                    << results[i] << ","       // Time
                    << results[i + 1] << ","   // S

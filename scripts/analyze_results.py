@@ -16,31 +16,74 @@ def analyze_results(test_dir="./data/test_results",
     for subdir in subdirs:
         Path(os.path.join(output_dir, subdir)).mkdir(parents=True, exist_ok=True)
 
-    # Load and validate reference simulation
+    # Load and validate reference data
+    print("\nLoading and validating data...")
     reference_df = pd.read_csv(main_results)
-    print(f"\nReference simulation:")
-    print(f"- Time steps: {len(reference_df)}")
-    print(f"- Variables: {', '.join(reference_df.columns)}")
-    print(f"- Value ranges:")
-    print(reference_df.describe())
+    print(f"Reference data shape: {reference_df.shape}")
+    print(f"Reference data columns: {reference_df.columns.tolist()}")
 
-    # Process test results with detailed validation
+    # Organize tests by type
+    test_categories = {}
+    
     for file in os.listdir(test_dir):
         if not file.endswith('_results.csv'):
             continue
-
+            
         test_name = file.split('_p')[0]
         test_df = pd.read_csv(os.path.join(test_dir, file))
-        print(f"\nAnalyzing test: {test_name}")
+        
+        # Determine test category from filename
+        if 'sensitivity' in test_name:
+            category = 'sensitivity'
+        else:
+            category = 'temporal'
+            
+        if category not in test_categories:
+            test_categories[category] = {}
+            
+        test_categories[category][test_name] = test_df
+        print(f"Loaded {category} test: {test_name}")
 
-        # Basic validation
-        validate_data(test_df, test_name)
+    # Create comparison plots by category
+    for category, tests in test_categories.items():
+        print(f"\nProcessing {category} tests...")
         
-        # Create comparison plots
-        plot_comparison(reference_df, test_df, test_name, output_dir)
+        # Create category directory
+        category_dir = os.path.join(output_dir, category)
+        Path(category_dir).mkdir(parents=True, exist_ok=True)
         
-        # Calculate and save error metrics
-        calculate_errors(reference_df, test_df, test_name, output_dir)
+        # Plot all tests in this category together
+        plt.figure(figsize=(12, 8))
+        
+        # Reference data
+        plt.plot(reference_df['Time'], reference_df['S_avg'], 'k-', 
+                label='Reference', linewidth=2)
+        
+        # Test data with different colors for each test
+        colors = plt.cm.rainbow(np.linspace(0, 1, len(tests)))
+        for (test_name, test_df), color in zip(tests.items(), colors):
+            plt.plot(test_df['Time'], test_df['S_avg'], '--', 
+                    color=color, label=test_name, linewidth=1.5)
+        
+        plt.title(f'{category.title()} Tests Comparison')
+        plt.xlabel('Time')
+        plt.ylabel('Population Fraction')
+        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        plt.grid(True, alpha=0.3)
+        
+        # Save category plot
+        save_path = os.path.join(category_dir, f'{category}_comparison.png')
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        print(f"Saved: {save_path}")
+
+    # Basic validation
+    for category, tests in test_categories.items():
+        for test_name, test_df in tests.items():
+            validate_data(test_df, test_name)
+            
+            # Calculate and save error metrics
+            calculate_errors(reference_df, test_df, test_name, output_dir)
 
     print("\nAnalysis complete! Check the following directories:")
     for subdir in subdirs:
