@@ -1,4 +1,5 @@
-#include "../../header/tests/TestConfig.h"
+#include "../../header/test/TestConfig.h"
+#include <filesystem>
 
 void TestSuite::addTemporalTests() {
     const std::string resultDir = "./data/test_results/";

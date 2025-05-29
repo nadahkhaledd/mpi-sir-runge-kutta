@@ -1,7 +1,7 @@
 #ifndef TEST_RUNNER_H
 #define TEST_RUNNER_H
 
-#include "../core/MPIHandler.h"
+#include "../main/MPIHandler.h"
 #include "TestConfig.h"
 
 class TestRunner {

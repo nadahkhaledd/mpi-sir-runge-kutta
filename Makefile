@@ -2,18 +2,20 @@
 MPICC = mpic++
 CFLAGS = -Wall -O2
 
-# Source files
-SRCS_CORE = $(wildcard src/core/*.cpp)
-SRCS_TESTS = $(wildcard src/tests/*.cpp)
-SRCS_MAIN = main.cpp
+# Directories
+MAIN_DIR = src/main
+TEST_DIR = src/test
+OUTPUT_DIR = output
 
-# Test sources
-TEST_SOURCES = src/tests/TestRunner.cpp src/tests/TestSuite.cpp src/tests/test_main.cpp src/tests/TestConfig.cpp
+# Source files
+SRCS_MAIN = $(wildcard $(MAIN_DIR)/*.cpp)
+SRCS_TEST = $(wildcard $(TEST_DIR)/*.cpp)
+MAIN_CPP = main.cpp
 
 # Object files
-OBJS_CORE = $(patsubst src/core/%.cpp,output/core/%.o,$(SRCS_CORE))
-OBJS_TESTS = $(patsubst src/tests/%.cpp,output/tests/%.o,$(SRCS_TESTS))
-OBJS_MAIN = $(patsubst %.cpp,output/%.o,$(SRCS_MAIN))
+OBJS_MAIN = $(patsubst $(MAIN_DIR)/%.cpp,$(OUTPUT_DIR)/main/%.o,$(SRCS_MAIN))
+OBJS_TEST = $(patsubst $(TEST_DIR)/%.cpp,$(OUTPUT_DIR)/test/%.o,$(SRCS_TEST))
+OBJ_MAIN_CPP = $(OUTPUT_DIR)/main_exe.o
 
 # Executables
 TARGET = sir_simulation
@@ -23,42 +25,32 @@ TEST_TARGET = sir_test_suite
 all: $(TARGET)
 
 # Test target
-test: $(OBJS_CORE) $(OBJS_TESTS)
-	$(MPICC) $(CFLAGS) -o $(TEST_TARGET) $^
+test: $(TEST_TARGET)
 
 # Main executable
-$(TARGET): $(OBJS_CORE) $(OBJS_MAIN)
+$(TARGET): $(OBJS_MAIN) $(OBJ_MAIN_CPP)
 	$(MPICC) $(CFLAGS) -o $@ $^
 
 # Test executable
-$(TEST_TARGET): $(OBJS_CORE) $(OBJS_TESTS)
+$(TEST_TARGET): $(OBJS_MAIN) $(OBJS_TEST)
 	$(MPICC) $(CFLAGS) -o $@ $^
 
-# Compile core source files
-output/core/%.o: src/core/%.cpp
-	@mkdir -p output/core
+# Compile main.cpp
+$(OBJ_MAIN_CPP): $(MAIN_CPP)
+	@mkdir -p $(OUTPUT_DIR)
+	$(MPICC) $(CFLAGS) -c $< -o $@
+
+# Compile main source files
+$(OUTPUT_DIR)/main/%.o: $(MAIN_DIR)/%.cpp
+	@mkdir -p $(OUTPUT_DIR)/main
 	$(MPICC) $(CFLAGS) -c $< -o $@
 
 # Compile test source files
-output/tests/%.o: src/tests/%.cpp
-	@mkdir -p output/tests
-	$(MPICC) $(CFLAGS) -c $< -o $@
-
-# Compile main
-output/%.o: %.cpp
-	@mkdir -p output
+$(OUTPUT_DIR)/test/%.o: $(TEST_DIR)/%.cpp
+	@mkdir -p $(OUTPUT_DIR)/test
 	$(MPICC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -rf output $(TARGET) $(TEST_TARGET)
+	rm -rf $(OUTPUT_DIR) $(TARGET) $(TEST_TARGET)
 
-analyze: test
-	@mkdir -p data/analysis
-	python scripts/analyze_tests.py
-	python scripts/visualize_comparison.py
-
-plot: analyze
-	@echo "Generating plots in data/analysis/"
-	python scripts/PlottingSIRModelResults.py
-
-.PHONY: all test clean analyze plot
+.PHONY: all test clean

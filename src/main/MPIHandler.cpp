@@ -1,7 +1,7 @@
-#include "../../header/core/MPIHandler.h"
-#include "../../header/core/CSVParser.h" // Needed for mapToSIR
-#include "../../header/core/SIRCell.h"   // Needed for SIRCell type
-#include "../../header/core/TimingUtils.h"
+#include "../../header/main/MPIHandler.h"
+#include "../../header/main/CSVParser.h" // Needed for mapToSIR
+#include "../../header/main/SIRCell.h"   // Needed for SIRCell type
+#include "../../header/main/TimingUtils.h"
 #include <mpi.h>
 #include <iostream>
 #include <fstream>

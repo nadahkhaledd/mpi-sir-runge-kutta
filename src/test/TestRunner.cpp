@@ -1,8 +1,8 @@
-#include "../../header/tests/TestConfig.h"
-#include "../../header/tests/TestRunner.h"
-#include "../../header/core/MPIHandler.h"
-#include "../../header/core/SimulationManager.h"
-#include "../../header/core/TimingUtils.h"
+#include "../../header/test//TestConfig.h"
+#include "../../header/test//TestRunner.h"
+#include "../../header/main/MPIHandler.h"
+#include "../../header/main/SimulationManager.h"
+#include "../../header/main/TimingUtils.h"
 #include <filesystem>
 #include <iostream>
 #include <fstream>

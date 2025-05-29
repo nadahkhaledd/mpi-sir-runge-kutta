@@ -1,6 +1,6 @@
-#include "../../header/core/SimulationManager.h"
-#include "../../header/core/CSVParser.h"
-#include "../../header/core/TimingUtils.h"
+#include "../../header/main/SimulationManager.h"
+#include "../../header/main/CSVParser.h"
+#include "../../header/main/TimingUtils.h"
 #include <iostream>
 
 std::vector<double> SimulationManager::runSimulation(

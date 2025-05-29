@@ -1,7 +1,7 @@
 #include <mpi.h>
-#include "header/core/MPIHandler.h"
-#include "header/core/SimulationManager.h"
-#include "header/core/TimingUtils.h"
+#include "header/main/MPIHandler.h"
+#include "header/main/SimulationManager.h"
+#include "header/main/TimingUtils.h"
 #include <iostream>
 #include <fstream>
 

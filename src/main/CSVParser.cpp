@@ -1,5 +1,5 @@
-#include "../../header/core/CSVParser.h"
-#include "../../header/core/SIRCell.h"
+#include "../../header/main/CSVParser.h"
+#include "../../header/main/SIRCell.h"
 #include <iostream>
 #include <fstream>
 #include <sstream>
