@@ -32,11 +32,13 @@ Before using a CSV file in the simulation:
 │   ├── test_results           # Test outputs
 │   ├── analysis              # Analysis plots and metrics
 │   └── test_datasets         # Raw CSVs for testing
+├── header
+│    ├── main
+│    └── test     
 ├── scripts                   # Python scripts for analysis and plotting
 └── src                       # C++ source code
     ├── main.cpp              # Main simulation file
-    ├── mpi_helper.cpp        # MPI communication utilities
-    ├── sir_model.cpp         # SIR model implementation
+    ├── main
     └── test                  # Test suite for simulation
 ```
 
