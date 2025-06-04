@@ -1,6 +1,6 @@
-# 🦠 SIR Simulation with MPI
+# 🦠 PARALLEL SIR SIMULATION USING MPI & RUNGE-KUTTA METHOD.
 
-A parallel implementation of the SIR (Susceptible-Infected-Recovered) model using MPI to simulate disease spread across US states.
+A parallel implementation of the SIR (Susceptible-Infected-Recovered) model using MPI to simulate disease spread across The United States of America states.
 
 ## Data Source & Preprocessing
 
@@ -169,6 +169,82 @@ python scripts/analyze_results.py
    ```bash
    python scripts/analyze_results.py
    ```
+
+## Simulation Results
+
+### Output File Formats
+
+#### Main Simulation Results
+Location: `data/output/simulation_results.csv`
+```csv
+Time,S_avg,I_avg,R_avg
+0.0,0.950000,0.050000,0.000000
+0.2,0.947331,0.052669,0.000000
+0.4,0.944516,0.055484,0.000000
+...
+```
+Where:
+- `Time`: Simulation timestep
+- `S_avg`: Proportion of susceptible population
+- `I_avg`: Proportion of infected population
+- `R_avg`: Proportion of recovered population
+
+#### Test Results
+Location: `data/test_results/<test_name>_p<num_processes>_results.csv`
+```csv
+Time,S_avg,I_avg,R_avg
+0.0,0.950000,0.050000,0.000000
+...
+```
+
+#### Performance Metrics
+Location: `data/output/timing_log.csv`
+```csv
+PhaseName,Statistic,Value,Units,NumRanks
+distributeBlocks_Total,Min,0.000123,s,4
+distributeBlocks_Total,Max,0.000145,s,4
+distributeBlocks_Total,Avg,0.000134,s,4
+...
+```
+
+### Generated Plots
+
+#### 1. SIR Evolution
+Location: `plots/sir_global_line_plot.png`
+- Shows the temporal evolution of S, I, R populations
+- X-axis: Time steps
+- Y-axis: Population proportions
+- Three lines: Susceptible (blue), Infected (red), Recovered (green)
+
+#### 2. Infection Heatmap
+Location: `plots/infection_heatmap_per_rank.png`
+- Visualizes infection spread across MPI ranks
+- X-axis: Time steps
+- Y-axis: MPI ranks
+- Color intensity: Infection level (darker = higher infection)
+
+#### 3. Performance Analysis
+Location: `plots/timing_comparison_phases.png`
+- Compares execution times across simulation phases
+- Shows min/max/avg times for each phase
+- Helps identify performance bottlenecks
+
+### Interpreting Results
+
+1. **Convergence Check**
+   - S + I + R should always sum to 1.0
+   - Values should stabilize over time
+   - Final R value indicates total affected population
+
+2. **Performance Metrics**
+   - Load balance: Compare execution times across ranks
+   - Communication overhead: Check MPI phase timings
+   - Scalability: Compare timings with different process counts
+
+3. **Validation Criteria**
+   - Infection peak timing matches historical data
+   - Recovery rates align with medical observations
+   - Geographic spread patterns are realistic
 
 ## 🔍 Detailed Implementation
 
