@@ -1,0 +1,41 @@
+\section{Experimental Setup}
+
+\subsection{Input Data}
+The simulation is initialized using real-world data derived from U.S. COVID-19 state-level daily reports, published by the Johns Hopkins CSSE dataset. Each record corresponds to a U.S. state and includes epidemiological and demographic features.
+
+Before integration, the raw data is cleaned and preprocessed using Python scripts (\texttt{clean\_sort\_dataset.py}). The resulting CSV files contain:
+\begin{itemize}
+    \item \texttt{Province\_State}: Name of the U.S. state
+    \item \texttt{Population}: Total number of residents in the state
+    \item \texttt{Lat, Long}: Geographic coordinates
+    \item \texttt{Confirmed, Deaths, Recovered}: Historical COVID-19 case data
+    \item Derived S, I, R values based on these statistics
+\end{itemize}
+
+Each file is reformatted with consistent headers and column ordering. Missing values are filled using backward filling or known approximations. The data is sorted geographically to preserve adjacency relationships in the simulation grid.
+
+\textbf{Example files}: \texttt{sorted\_01-01-2021.csv}, \texttt{sorted\_02-05-2021.csv}
+
+\subsection{Simulation Parameters}
+We test the model under various combinations of infection rate \( \beta \) and recovery rate \( \gamma \) to reflect different behavioral and traffic conditions. These parameters mirror classical SIR dynamics:
+\begin{itemize}
+    \item \( \beta \): Controls how fast information spreads among vehicles
+    \item \( \gamma \): Reflects how quickly congestion is resolved
+\end{itemize}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|c|c|c|l|}
+\hline
+\textbf{Scenario} & \( \beta \) & \( \gamma \) & \textbf{Interpretation} \\
+\hline
+Baseline & 0.3 & 0.1 & Moderate info spread and recovery \\
+Fast Spread & 0.5 & 0.1 & Aggressive dissemination of signals \\
+Fast Recovery & 0.3 & 0.3 & Faster clearing of blocked roads \\
+Low Transmission & 0.1 & 0.1 & Weak signal sharing; slow dynamics \\
+\hline
+\end{tabular}
+\caption{Tested parameter scenarios}
+\end{table}
+
+Each configuration simulates 20 iterations using a fixed time step of \( \Delta t = 0.2 \).

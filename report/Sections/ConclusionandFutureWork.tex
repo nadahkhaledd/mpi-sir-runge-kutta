@@ -1,0 +1,12 @@
+\section{Conclusion and Future Work}
+
+
+We successfully implemented a high-performance parallel simulation framework that extends the classical SIR (Susceptible-Infected-Recovered) model to simulate smart road dynamics. The focus of this project was not on fully achieving smart road functionality, but rather on constructing a modular and scalable proof-of-concept system that demonstrates the feasibility of adapting epidemic modeling to spatially distributed vehicle networks. The model leverages 4th-order Runge-Kutta numerical integration and MPI-based parallelization with ghost cell synchronization to support large-scale simulations.
+
+The system has shown accurate behavior, stable performance, and strong scaling properties. Timing analysis confirms efficient distribution of computational load, and visualization validates the consistency of infection dynamics across partitions.
+
+Looking forward, several directions can further enhance the model’s realism and applicability. One avenue is the incorporation of directional vehicle flow to better mimic real-world traffic behavior. Another key improvement is the use of dynamic load balancing techniques to adaptively distribute work among MPI ranks, particularly under spatially heterogeneous conditions. Additionally, the model can benefit from GPU acceleration through frameworks such as OpenACC or CUDA, which would further boost scalability. Integration with real-time sensor networks represents another valuable extension, enabling more responsive and data-driven simulations applicable to intelligent transportation systems.
+
+This project lays a solid foundation for future research and development in parallel simulation of cyber-physical infrastructures.
+
+

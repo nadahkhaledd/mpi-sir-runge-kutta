@@ -1,0 +1,24 @@
+\section{Mathematical Formulation}
+We adopt the classical SIR (Susceptible–Infected–Recovered) model to simulate the dynamic evolution of states within a spatial grid. Each grid cell maintains the proportion of its population in the three states:
+
+\begin{itemize}
+    \item \textbf{S}: Susceptible individuals
+    \item \textbf{I}: Infected individuals
+    \item \textbf{R}: Recovered individuals
+\end{itemize}
+
+The local dynamics of state transitions are governed by the standard system of differential equations:
+
+\begin{align*}
+\frac{dS}{dt} &= -\beta S \cdot I \\
+\frac{dI}{dt} &= \beta S \cdot I - \gamma I \\
+\frac{dR}{dt} &= \gamma \cdot I
+\end{align*}
+
+To model spatial interaction across neighboring cells, we extend the equations by incorporating a coupling term that accounts for the influence of infected populations in adjacent locations. The modified equation for the susceptible population in cell \((i, j)\) becomes:
+
+\[
+\frac{dS_{ij}}{dt} = -\beta S_{ij} \cdot \left( I_{ij} + \sum_{(k,l) \in N(i,j)} I_{kl} \right)
+\]
+
+where \( N(i,j) \) denotes the set of neighboring cells of \((i,j)\). Similar formulations are used for \( \frac{dI_{ij}}{dt} \) and \( \frac{dR_{ij}}{dt} \) to capture spatially distributed SIR dynamics.

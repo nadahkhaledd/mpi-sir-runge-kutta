@@ -1,0 +1,124 @@
+% --------------------------
+% ---- DECLARE PACKAGES ----
+% --------------------------
+\documentclass[a4paper, oneside, openright]{book}
+\usepackage[T1]{fontenc} % Font encoding, T1 = it
+\usepackage{lmodern}
+\usepackage{booktabs}
+\usepackage{multicol} % Per il frontespizio
+\usepackage[utf8]{inputenc} % Input encoding - per caratteri particolari
+\usepackage[english]{babel} % Lingua principale italiano, con parti in inglese
+\usepackage{blindtext} % Per la generazione di paragrafi lorem ipsum
+\usepackage{graphicx} % Per includere immagini esterne
+\usepackage[a4paper,top=2.5cm,bottom=2.5cm,left=3cm,right=3cm]{geometry} %impaginazione e margini documento
+\usepackage[fontsize=13pt]{scrextend} %dimensione font
+\usepackage{graphicx}
+\usepackage[parfill]{parskip} % Disabilita l'indentazione dopo essere andati a capo
+% \usepackage[hang,flushmargin]{footmisc} % Disabilita l'indentazione nelle footnotes
+\usepackage{titlesec}
+
+\usepackage{minted} % Per i blocchi di codice
+\usepackage{float}
+\usepackage{amsmath} % For advanced math typesetting
+\usepackage{amssymb} % For additional symbols, if needed
+\usepackage{graphicx} % For including figures, if applicable
+\usepackage[font=scriptsize, skip=5pt]{caption} % Spazio tra la caption e l'immagine
+\usepackage[backend=biber, style=numeric, backref=true,defernumbers=true]{biblatex}
+\usepackage[immediate]{silence}
+\WarningFilter[temp]{latex}{Command} % silence the warning
+\usepackage{sectsty}
+\DeactivateWarningFilters[temp] % So nothing unrelated gets silenced
+\usepackage{hyperref} % Rende l'indice cliccabile
+\usepackage[justification=centering]{caption} % Per centrare le captions
+\usepackage{csquotes} % Dipendenza di babel
+\usepackage[bottom]{footmisc} % Posiziona le footnotes alla fine della pagina
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{amsmath, amssymb, graphicx}
+\usepackage{hyperref}
+\newcommand{\cmark}{\ding{51}}  % checkmark
+\newcommand{\xmark}{\ding{55}}  % x-mark
+\usepackage{pifont}
+\bibliography{references}        % no .bib extension!
+
+
+
+% ------------------------
+% ---- DOCUMENT SETUP ----
+% ------------------------
+\pagestyle{plain}
+\raggedbottom % Se la pagina non è completa, lascia lo spazio alla fine
+
+\titleformat{\chapter}[display]
+    {\normalfont\huge\bfseries}{}{0pt}{\LARGE} % Remove chapter number display
+\titlespacing*{\chapter}{0pt}{0pt}{20pt} 
+\chaptertitlefont{\fontsize{22pt}{30pt}\selectfont}
+
+\hypersetup{ % Setup dell'aspetto dei link
+    colorlinks,
+    citecolor=black,
+    filecolor=black,
+    linkcolor=black,
+    urlcolor=black
+}
+
+% \renewcommand{\footnoterule}{ % Rende la linea delle footnotes larga tutta la pagina
+%   \kern -3pt
+%   \hrule width \textwidth height 1pt
+%   \kern 2pt
+% } 
+\renewcommand{\footnotesize}{\fontsize{11pt}{13pt}\selectfont} % Imposta la dimensione del testo delle footnotes
+\setlength{\footnotesep}{0.5cm} % Imposta lo spazio fra e singole footnotes
+\setlength{\skip\footins}{1.5cm} % Imposta lo spazio fra il corpo e le footnotes
+
+\DeclareUnicodeCharacter{02BC}{}
+
+% ------------------------
+% ---- DOCUMENT START ----
+% ------------------------
+\addbibresource{bibliography.bib} % Importiamo la bibliografia
+\begin{document} % Inizio documento
+\pagenumbering{gobble} % Disabilita numerazione pagine
+\input{Frontespizio.tex} % PAGINA FRONTESPIZIO
+
+\pagenumbering{arabic} % Riabilita la numerazione in modo che cominci dal primo capitolo
+\setcounter{chapter}{1} % Fa risultare l'introduzione come capitolo 0
+% ------------------
+% ---- CHAPTERS ----
+% ------------------
+\tableofcontents  % Genera l'indice
+
+
+\newpage
+\input{Sections/Introduction}
+
+\newpage
+\input{Sections/MathematicalFormulation}
+
+\newpage
+\input{Sections/NumericalMethods}
+
+\newpage
+\input{Sections/CodeArchitectureandStructure}
+
+\newpage
+\input{Sections/ParallelizationTechniquesandImplementation}
+
+\newpage
+\input{Sections/ExperimentalSetup}
+
+\newpage
+\input{Sections/ResultsandAnalysis}
+
+\newpage
+\input{Sections/ConclusionandFutureWork}
+
+\printbibliography
+
+
+
+
+% ----------------------
+% ---- DOCUMENT END ----
+% ----------------------
+\end{document} % Fine documento

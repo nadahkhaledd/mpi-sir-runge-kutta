@@ -1,0 +1,7 @@
+\section{Numerical Methods}
+We employ a 4th-order Runge-Kutta (RK4) integrator for each time step to solve the system of ordinary differential equations governing the state transitions.\cite{butcher2003numerical} This method offers a good balance between computational efficiency and numerical accuracy, making it well-suited for time-dependent simulations of interacting systems. Compared to simpler schemes such as Euler’s method, RK4 significantly reduces error accumulation over long-term integration.
+
+Each cell’s state—represented by the fractions of susceptible (S), informed (I), and blocked (R) vehicles—is updated based on both local values and the influence from neighboring cells. To achieve this, we implement a neighbor-aware RK4 variant in the function \texttt{rk4StepWithNeighbors()}, which calculates intermediate derivatives using the average infected fraction from adjacent cells. This allows the simulation to realistically capture the spatial diffusion of information or congestion.
+
+After each RK4 update, we apply a normalization step to ensure that the sum \( S + I + R = 1 \), preserving the physical consistency of the model. This normalization also helps prevent numerical drift due to floating-point approximations across iterations.
+

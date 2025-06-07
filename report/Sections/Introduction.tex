@@ -1,0 +1,26 @@
+\textbf{Abstract}:  
+This project presents a parallel simulation framework based on the classical SIR (Susceptible-Infected-Recovered) epidemic model, aimed at studying the dynamics of disease spread in spatially structured populations. The model discretises the simulation domain into a 2D grid where each cell evolves over time according to the SIR equations. To ensure numerical accuracy, the system is integrated using the 4th-order Runge-Kutta method. For scalability, the implementation employs MPI-based domain decomposition and ghost cell exchange, allowing the simulation to run efficiently across multiple processors. Experimental results validate the correctness and performance of the framework, and the architecture is designed to be extensible for other spatial epidemic or information propagation scenarios.
+
+\section{Introduction}
+
+Modeling the spread of diseases across spatial domains is an important task in computational epidemiology. Classical compartmental models, such as the SIR (Susceptible-Infected-Recovered) model, capture population-level transitions between health states, but often assume a well-mixed population. In reality, geographic and social structures cause spatial heterogeneity, making grid-based modeling more appropriate for certain applications.
+
+In this work, we simulate the SIR model over a two-dimensional spatial grid, where each cell represents a subregion of the population. The infection dynamics are governed by ordinary differential equations, which are numerically solved using a 4th-order Runge-Kutta (RK4) integration scheme to ensure accuracy and stability.
+
+To enable high-resolution and large-scale simulations, we parallelize the framework using the Message Passing Interface (MPI). The spatial domain is decomposed across MPI ranks, and ghost cell communication is used to preserve local interaction at region boundaries. The simulation is implemented in C++, and performance evaluations confirm its scalability and balanced workload distribution across ranks.
+
+We adopt MPI to support distributed memory parallelism, which is essential for scaling to large domains and executing the simulation efficiently on multi-node systems.
+
+Although this work focuses on infectious disease modeling, the underlying architecture can be generalized to simulate other types of spatial propagation processes, such as information diffusion or network congestion, making it a versatile foundation for future research.
+
+\section{Background and Definitions}
+
+\paragraph{Grid Structure and Neighborhoods.}
+The simulation domain is discretized into a two-dimensional grid, where each cell represents a subregion of the population. For each cell, we define a neighborhood consisting of the adjacent cells (typically using the 4-neighbor or 8-neighbor scheme) to model spatial interactions in the infection dynamics.
+
+\paragraph{Ghost Cells and Parallelization.}
+In the MPI-based parallel implementation, the grid is partitioned across multiple ranks. To maintain data consistency at subdomain boundaries, we use ghost cells—copies of neighboring cells from adjacent ranks—which are updated through inter-process communication at each time step.
+
+\paragraph{Single Cell Evolution.}
+Each simulation cell independently evolves over time according to the SIR model's ordinary differential equations (ODEs). The evolution is computed using a 4th-order Runge-Kutta (RK4) method for numerical integration. In the parallel version, each RK4 step incorporates values from neighboring cells via ghost cell communication to model spatial infection spread.
+
