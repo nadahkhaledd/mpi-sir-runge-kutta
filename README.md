@@ -241,11 +241,6 @@ Location: `plots/timing_comparison_phases.png`
    - Communication overhead: Check MPI phase timings
    - Scalability: Compare timings with different process counts
 
-3. **Validation Criteria**
-   - Infection peak timing matches historical data
-   - Recovery rates align with medical observations
-   - Geographic spread patterns are realistic
-
 ## 🔍 Detailed Implementation
 
 ### SIR Model Equations
