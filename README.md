@@ -5,7 +5,7 @@ A parallel implementation of the SIR (Susceptible-Infected-Recovered) model usin
 ## Data Source & Preprocessing
 
 ### Original Data Source
-The datasets used in this project are sourced from the [JHU CSSE COVID-19 Dataset](https://github.com/CSSEGISandData/COVID-19/tree/4360e50239b4eb6b22f3a1759323748f36752177/csse_covid_19_data/csse_covid_19_daily_reports_us). Our main dataset is from February 2, 2021.
+The datasets used in this project are sourced from the [JHU CSSE COVID-19 Dataset](https://github.com/CSSEGISandData/COVID-19/tree/4360e50239b4eb6b22f3a1759323748f36752177/csse_covid_19_data/csse_covid_19_daily_reports_us). Our main input dataset is from February 2, 2021.
 
 ### Data Preprocessing Steps
 Before using a CSV file in the simulation:
